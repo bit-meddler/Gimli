@@ -5,7 +5,7 @@ import struct
 
 from . import CameraTraits
 
-# Camera Configurations
+# Camera Configurations --------------------------------------------------------
 CAMERA_CAPABILITIES = {
     "fps" : CameraTraits( "fps", 60, 0, 60, int,
                           value=None,
@@ -602,11 +602,35 @@ CAMERA_REQUESTS = {
     "hello"   : b"h",  # Request the letter h
 }
 
+CHAR_COMMAND_VAL  = ord( b"*" ) # (BB) unit8
+SHORT_COMMAND_VAL = ord( b"~" ) # (Hh) uint16 with int16 data
+
+CAMERA_COMMANDS_REV = { v:k for k,v in CAMERA_COMMANDS.items() }
+CAMERA_REQUESTS_REV = { v:k for k,v in CAMERA_REQUESTS.items() }
+
 KNOWN_EXE_PARAMS = ( sorted( CAMERA_COMMANDS.keys() ) )
 KNOWN_REQ_PARAMS = ( sorted( CAMERA_REQUESTS.keys() ) )
 KNOWN_SET_PARAMS = ( sorted( CAMERA_CAPABILITIES.keys() ) )
 
-# Networking Configurations
+# Data Packet info -------------------------------------------------------------
+PACKET_TYPES = {
+    "centroids" : 0x00, # Could be multi-packet
+    "imagedata" : 0x0A, # will have to be multi Packet for 1MB~4MB images
+    "regslo"    : 0x0C, # 56 Bytes
+    "regshi"    : 0x0E, # 823 Bytes
+    "textslug"  : 0x10, # Logging Text
+    "version"   : 0x11, # Version Text
+}
+
+ROID_COMPRESSION = {
+    "compressed" : 0x00, # XX, YY, D
+    "full_sized" : 0x04, # XXx, YYy, H, W, Dd
+}
+
+PACKET_TYPES_REV = { v:k for k,v in PACKET_TYPES.items() }
+ROID_COMPRESSION_REV = { v:k for k,v in ROID_COMPRESSION.items() }
+
+# Networking Configurations ----------------------------------------------------
 UDP_PORT_TX = 1234
 UDP_PORT_RX = 1235
 
@@ -645,7 +669,6 @@ def composeCommand( command_name, value ):
 
     return (cmd_str + payload, in_regshi)
 # composeCommand( command_name, value )
-
 
 # Class
 class PiCamera( object ):
@@ -727,4 +750,11 @@ class PiCamera( object ):
         for param, val in d["HARDWARE"].items():
             bulk += "set {} {};".format( param, val )
         return bulk
+
+    @staticmethod
+    def validateSet( param, str_val ):
+        trait = CAMERA_CAPABILITIES[ param ]
+        cast = trait.dtype( str_val )
+        return trait.isValid( cast )
+
 #class PiCamera( object )

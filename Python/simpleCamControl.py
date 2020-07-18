@@ -1,7 +1,8 @@
 import argparse
 import cmd
 import textwrap
-import socket
+import random
+
 
 # Workaround not being in PATH
 import os, sys
@@ -18,7 +19,7 @@ class CamControl( cmd.Cmd ):
         super( CamControl, self ).__init__()
         self.camera_ip = camera_ip
         _, _, _, cam_no = camera_ip.split( "." )
-        self.prompt = "Camera:{: <3}> ".format( cam_no )
+        self.prompt = "Camera:{: >3}> ".format( cam_no )
         self.camera = piCam.PiCamera( camera_ip )
 
         # selector for imperatives
@@ -30,18 +31,16 @@ class CamControl( cmd.Cmd ):
 
         # Setup Communication Socket
         self.local_ip = "127.0.0.1" if local_ip is None else local_ip
-        timeout = 12
-        self.command_socket = socket.socket( socket.AF_INET, socket.SOCK_DGRAM )
-        self.command_socket.setsockopt( socket.SOL_SOCKET, socket.SO_REUSEADDR, 1 )
-        self.command_socket.bind( (self.local_ip, piCam.UDP_PORT_RX) )
-        self.command_socket.settimeout( timeout )
-        self.intro = "Camera Control Console, operating camera '{}' from '{:0>3}'".format( self.camera_ip, self.local_ip )
+        self.com_mgr = piComunicate.SimpleComs( self.local_ip )
+        self.com_mgr.start()
 
-    def test_send( self, cmd_string ):
-        self.command_socket.sendto( cmd_string, (self.camera_ip, piCam.UDP_PORT_TX) )
+        self.intro = "Camera Control Console, operating camera '{}' from '{:0>3}'".format( self.camera_ip, self.local_ip )
 
     def do_EOF( self, args ):
         return True
+
+    def emptyline( self ):
+        self._attempt_to_read()
 
     def _genericCompleter( self, suggests, text ):
         if( text ):
@@ -54,23 +53,18 @@ class CamControl( cmd.Cmd ):
         if( " " in args ):
             args, _ = args.split( " ", 1 )
         if( args in commands ):
-            print( "{} '{}'".format( verb, args ) )
-            msg, _ = piCam.composeCommand( args, None )
-            print( "Payload '{}'".format( msg.hex() ) )
-            self.test_send( msg )
+            self.com_mgr.q_cmd.put( "{}:{} {}".format( self.camera_ip, verb, args ) )
         else:
             print( "Unknown request '{}'".format( args ) )
 
     def do_set( self, args ):
-        param, vals = args.lower().split( " ", 1 )
+        param, val = args.lower().split( " ", 1 )
         if( param in piCam.KNOWN_SET_PARAMS ):
             trait = self.camera.hw_settings[ param ]
-            cast = trait.dtype( vals )
+            cast = trait.dtype( val )
             if( trait.isValid( cast ) ):
-                print( "Setting '{}' to '{}'".format( param, cast ) )
-                msg, in_regs_hi = piCam.composeCommand( param, cast )
-                print( "Payload '{}'".format( msg.hex() ) )
-                self.test_send( msg )
+                print( "SENDING set '{}' '{}'".format( param, val ) )
+                self.com_mgr.q_cmd.put( "{}:set {} {}".format( self.camera_ip, param, val ) )
                 trait.value = cast
                 self.camera.touched.add( param )
             else:
@@ -91,7 +85,13 @@ class CamControl( cmd.Cmd ):
         print("You need to set all four corners for a mask zone to be active.  Maybe use the 'bulk' syntax.")
 
     def do_bulk( self, args ):
-        commands = args.split(";")
+        """
+        Clean and validate a builk command, could execute peicemeal, or send a Bulk to the com_mgr
+        :param args: ';' separated commands
+        :return:
+        """
+        commands = args.lower().split(";")
+        output = "bulk "
         for cmd_string in commands:
             cmd_string = cmd_string.strip()
 
@@ -99,15 +99,30 @@ class CamControl( cmd.Cmd ):
                 continue
 
             if( " " in cmd_string ):
+                # clean the bulk command
                 imperative, data = cmd_string.split( " ", 1 )
 
-                if( imperative in self._HANDLER ):
-                    self._HANDLER[ imperative ]( data )
+                if( imperative == "exe" ):
+                    if( data in piCam.KNOWN_EXE_PARAMS ):
+                        output += "{} {};".format( imperative, data )
+                        continue
+
+                if( imperative == "get" ):
+                    if (data in piCam.KNOWN_REQ_PARAMS):
+                        output += "{} {};".format( imperative, data )
+                        continue
+
+                if( imperative == "set" ):
+                    param, val = data.lower().split( " ", 1 )
+                    if( param in piCam.KNOWN_SET_PARAMS ):
+                        if( self.camera.validateSet( param, val ) ):
+                            output += "{} {} {};".format( imperative, param, val )
                 else:
                     print("Unrecognised imperative '{}'".format( imperative ))
             else:
                 print("Unknown '{}'".format( cmd_string ))
-        self.do_get( "regshi" )
+
+        self.com_mgr.q_cmd.put( "{}:{}".format( self.camera_ip, output ) )
 
     def help_bulk( self ):
         print( "bulk expects a ';' separated list of commands to execute as a batch. commands should be space separated as normal" )
@@ -124,7 +139,7 @@ class CamControl( cmd.Cmd ):
         print(textwrap.fill( "Available paramiters: '{}'".format( "', '".join( piCam.KNOWN_EXE_PARAMS ) ), width=80) )
 
     def do_get( self, args ):
-        self._genericOneCommand( args, piCam.KNOWN_REQ_PARAMS, "req" )
+        self._genericOneCommand( args, piCam.KNOWN_REQ_PARAMS, "get" )
 
     def complete_get( self, text, line, start_index, end_index ):
         return self._genericCompleter( piCam.KNOWN_REQ_PARAMS, text )
@@ -142,7 +157,8 @@ class CamControl( cmd.Cmd ):
     # Shortcuts
     def do_exit( self,  args ):
         # Clean shutdown
-        self.command_socket.close()
+        self.com_mgr.q_cmd.put( "{}:close close".format( self.camera_ip ) )
+        self.com_mgr.join()
         exit(1)
 
     def do_hello( self, args ):
@@ -153,6 +169,35 @@ class CamControl( cmd.Cmd ):
 
     def do_stop( self, args ):
         self.do_exe( "stop" )
+
+    def do_spam( self, args ):
+        # Spam the camera with random commands
+        num = int( args.strip() )
+        for i in range( num ):
+            # pick a random trait
+            param = random.choice( piCam.KNOWN_SET_PARAMS )
+            trait = self.camera.hw_settings[ param ]
+            val = random.randrange( trait.min, trait.max )
+            self.do_set( "{} {}".format( param, val ) )
+            if( (i%6) == 0 ): # occasionally do a reg get
+                self.do_get( "regslo" )
+
+    # reading?
+    def postcmd( self, stop, line ):
+        self._attempt_to_read()
+
+    def postloop (self ):
+        self._attempt_to_read()
+
+    def _attempt_to_read( self ):
+        while( not self.com_mgr.q_rep.empty() ):
+            data = self.com_mgr.q_rep.get( block=True, timeout=0.1 )
+            try:
+                ip, msg = data
+                if( ip == self.local_ip ):
+                    print( msg )
+            except ValueError:
+                print( "Error unpacking '{}'".format( data ) )
 
 
 if( __name__ == "__main__" ):

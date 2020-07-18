@@ -1,4 +1,5 @@
 """ Communication routines to send & receive to a piCCam"""
+import queue
 import select
 import socket
 import threading
@@ -30,8 +31,8 @@ class SimpleComs( threading.Thread ):
         self.daemon = True
 
         # Queues to comunicate in and out of the thread
-        self.q_cmd = Queue.Queue()
-        self.q_rep = Queue.Queue()
+        self.q_cmd = queue.Queue()
+        self.q_rep = queue.Queue()
 
         # Activity Flag
         self.running = threading.Event()
@@ -67,10 +68,9 @@ class SimpleComs( threading.Thread ):
                     cmd_string = self.q_cmd.get( False )
                     target, commands = cmd_string.split( ":", 1 )
                     imperative, data = commands.split( " ", 1 )
-
                     self._HANDLER[ imperative ]( target, data )
 
-                except Queue.Empty as e:
+                except queue.Empty as e:
                     # no commands
                     pass
                 except KeyError:
@@ -78,26 +78,17 @@ class SimpleComs( threading.Thread ):
                     pass
 
             # Read Data from socket
-            readable, _, _ = select.select( self._inputs, [], [] )
+            readable, _, _ = select.select( self._inputs, [], [], 0 ) # 0 timeout = poll
             for sock in readable:
                 # TODO: should write a 'chunk' reader
                 data, (src_ip, src_port) = sock.recvfrom( RECV_BUFF_SZ )
                 # for now, just a digest
-                self.q_rep.put( (src_ip, src_port, data) )
+                self.q_rep.put( (src_ip, data) )
                 self.has_data.set()
 
         # running flag has been cleared
         self.command_socket.close()
 
-
-    def _send( self, target, msg ):
-        """
-        Send out the message to the Target
-        :param target: (string) Target Camera IP
-        :param msg: Command String
-        :return: None
-        """
-        self.command_socket.sendto( msg, ( target, piCam.UDP_PORT_TX ) )
 
     def do_exe( self, target, command ):
         """
@@ -106,7 +97,9 @@ class SimpleComs( threading.Thread ):
         :param command: (string) The request
         :return: None
         """
-        self._send( target, piCam.composeCommand( command, None ) )
+        msg, _ = piCam.composeCommand( command, None )
+        self.command_socket.sendto( msg, ( target, piCam.UDP_PORT_TX ) )
+        return False
 
     def do_get( self, target, request ):
         """
@@ -116,34 +109,53 @@ class SimpleComs( threading.Thread ):
         :param request: (string) The request
         :return: None
         """
-        self._send( target, piCam.composeCommand( request, None ) )
+        msg, _ = piCam.composeCommand( request, None )
+        self.command_socket.sendto( msg, ( target, piCam.UDP_PORT_TX ) )
+        return False
 
     def do_set( self, target, args ):
         """
-        Set a Setting - assumes the value has been pre-validated
+        Set a Setting - assumes the value has been pre-validated.  The Camea state will be invalid, and we might need
+        to get a refresh of the regs, in_regshi says which req to send
+
         :param target: (string) IP Address of camera being controlled
         :param args: (string) The Paramiter and value, space separated.
         :return: None
         """
-        param, vals = args.lower().split( " ", 1 )
-        cast = piCam.CAMERA_CAPABILITIES[ param ]( vals )
-        self._send( target, piCam.composeCommand( param, cast ) )
+        param, val = args.lower().split( " ", 1 )
+        trait = piCam.CAMERA_CAPABILITIES[ param ]
+        cast = trait.dtype( val )
+        msg, in_regshi = piCam.composeCommand( param, cast )
+
+        self.command_socket.sendto( msg, ( target, piCam.UDP_PORT_TX ) )
+        return in_regshi
 
 
     def do_bulk( self, target, tasks ):
         """ Do a bulk operation, assume the commands are pre-validated
+
         :param target: (string) IP Address of camera being controlled
         :param tasks: (string) A Bulk execution string
         :return: None
         """
+        hiregs = False
         commands = tasks.split(";")
-        for cmd_string in commands:
-            imperative, data = cmd_string.split( " ", 1 )
-            self._HANDLER[ imperative ]( target, data )
 
-    def close( self, *args ):
+        for cmd_string in commands:
+            if( not cmd_string ):
+                continue
+            imperative, data = cmd_string.split( " ", 1 )
+            in_regshi = self._HANDLER[ imperative ]( target, data )
+            hiregs |= in_regshi
+        self.q_rep.put( (target, "get {}".format( target, "regshi" if in_regshi else "regslo" )) )
+
+    def close( self, target, arg ):
         """
+        The close command is '<anything>:close close'
         Set the Flag to end this process and do a graceful shutdown on the socket
+
         :return: None
         """
-        self.running.clear()
+        if( arg == "close" ):
+            self.command_socket.sendto( b"bye", (target, piCam.UDP_PORT_TX) )
+            self.running.clear()
