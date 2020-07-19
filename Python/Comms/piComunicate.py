@@ -46,7 +46,7 @@ class SimpleComs( threading.Thread ):
         self.host_ip = "127.0.0.1" if host_ip is None else host_ip
         self.command_socket = socket.socket( socket.AF_INET, socket.SOCK_DGRAM )
         self.command_socket.setsockopt( socket.SOL_SOCKET, socket.SO_REUSEADDR, 1 )
-        self.command_socket.bind( (self.host_ip, piCam.UDP_PORT_RX) )
+        self.command_socket.bind( (self.host_ip, piCam.UDP_PORT_TX) )
         self.command_socket.settimeout( SOCKET_TIMEOUT )
         self._inputs = [ self.command_socket ]
 
@@ -83,12 +83,14 @@ class SimpleComs( threading.Thread ):
                 # TODO: should write a 'chunk' reader
                 data, (src_ip, src_port) = sock.recvfrom( RECV_BUFF_SZ )
                 # for now, just a digest
-                self.q_rep.put( (src_ip, data) )
-                self.has_data.set()
+                self.handlePacket( src_ip, data )
 
         # running flag has been cleared
         self.command_socket.close()
 
+    def handlePacket( self, src_ip, data ):
+        dtype, msg = piCam.decodePacket( data )
+        print( msg )
 
     def do_exe( self, target, command ):
         """
@@ -98,7 +100,7 @@ class SimpleComs( threading.Thread ):
         :return: None
         """
         msg, _ = piCam.composeCommand( command, None )
-        self.command_socket.sendto( msg, ( target, piCam.UDP_PORT_TX ) )
+        self.command_socket.sendto( msg, ( target, piCam.UDP_PORT_RX ) )
         return False
 
     def do_get( self, target, request ):
@@ -110,7 +112,7 @@ class SimpleComs( threading.Thread ):
         :return: None
         """
         msg, _ = piCam.composeCommand( request, None )
-        self.command_socket.sendto( msg, ( target, piCam.UDP_PORT_TX ) )
+        self.command_socket.sendto( msg, ( target, piCam.UDP_PORT_RX ) )
         return False
 
     def do_set( self, target, args ):
@@ -127,7 +129,7 @@ class SimpleComs( threading.Thread ):
         cast = trait.dtype( val )
         msg, in_regshi = piCam.composeCommand( param, cast )
 
-        self.command_socket.sendto( msg, ( target, piCam.UDP_PORT_TX ) )
+        self.command_socket.sendto( msg, ( target, piCam.UDP_PORT_RX ) )
         return in_regshi
 
 
@@ -157,5 +159,5 @@ class SimpleComs( threading.Thread ):
         :return: None
         """
         if( arg == "close" ):
-            self.command_socket.sendto( b"bye", (target, piCam.UDP_PORT_TX) )
+            self.command_socket.sendto( b"bye", (target, piCam.UDP_PORT_RX) )
             self.running.clear()
