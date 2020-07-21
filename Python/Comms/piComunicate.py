@@ -3,6 +3,7 @@ import queue
 import select
 import socket
 import threading
+import time
 
 from Comms import piCam
 
@@ -25,7 +26,7 @@ def listIPs():
 
 class SimpleComs( threading.Thread ):
 
-    def __init__( self, host_ip ):
+    def __init__( self, host_ip=None ):
         # Thread setup
         super( SimpleComs, self ).__init__()
         self.daemon = True
@@ -89,8 +90,8 @@ class SimpleComs( threading.Thread ):
         self.command_socket.close()
 
     def handlePacket( self, src_ip, data ):
-        dtype, msg = piCam.decodePacket( data )
-        print( msg )
+        dtype, time_stamp, num_dts, dgm_no, dgm_cnt, img_os, img_sz, msg = piCam.decodePacket( data )
+        print( time.time(), piCam.PACKET_TYPES_REV[ dtype ], num_dts, msg )
 
     def do_exe( self, target, command ):
         """

@@ -75,7 +75,7 @@ class CamControl( cmd.Cmd ):
             print( "Unknown request '{}'".format( args ) )
 
     def complete_set( self, text, line, start_index, end_index ):
-            return _genericCompleter( piCam.KNOWN_SET_PARAMS, text )
+            return self._genericCompleter( piCam.KNOWN_SET_PARAMS, text )
 
     def help_set( self ):
         print("Set a Camera Paramiter eg: 'set strobe 15'. param name is all lower case")
@@ -133,7 +133,7 @@ class CamControl( cmd.Cmd ):
         self._genericOneCommand( args, piCam.KNOWN_EXE_PARAMS, "exe" )
 
     def complete_exe( self, text, line, start_index, end_index ):
-        return self. _genericCompleter( piCam.KNOWN_EXE_PARAMS, text )
+        return self._genericCompleter( piCam.KNOWN_EXE_PARAMS, text )
 
     def help_exe( self ):
         print(textwrap.fill( "Available paramiters: '{}'".format( "', '".join( piCam.KNOWN_EXE_PARAMS ) ), width=80) )
@@ -204,11 +204,11 @@ if( __name__ == "__main__" ):
     ips =  piComunicate.listIPs()
     local_ip = ips[0] if len(ips)>0 else "192.168.0.20"
 
-    DEFAULT_TARGET = "127.0.0.1"#"192.168.0.32"
+    DEFAULT_TARGET = "192.168.0.21"
 
     parser = argparse.ArgumentParser()
     parser.add_argument( "-c", action="store", dest="camera_ip", default=DEFAULT_TARGET, help="Camera to Control" )
-    parser.add_argument( "-l", action="store", dest="local_ip", default=DEFAULT_TARGET, help="Host IP (on same subnet as camera" )
+    parser.add_argument( "-l", action="store", dest="local_ip", default=local_ip, help="Host IP (on same subnet as camera" )
 
     args = parser.parse_args()
 

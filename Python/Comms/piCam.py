@@ -674,18 +674,18 @@ def composeCommand( command_name, value ):
     return (cmd_str + payload, in_regshi)
 # composeCommand( command_name, value )
 
-def encodePacket( frm_cnt, num_dets, compression, dtype, sml_cnt, time_stamp, dgm_no, num_dgm, data, img_os=None, img_sz=None ):
+def encodePacket( frm_cnt, num_dts, compression, dtype, sml_cnt, time_stamp, dgm_no, dgm_cnt, data, img_os=None, img_sz=None ):
     """
     Encode a Packet
 
     :param frm_cnt: (int) number of frames sent, rolling up to 8191
-    :param num_dets: (int) number of detections in the packet/sequence
+    :param num_dts: (int) number of detections in the packet/sequence
     :param compression: (byte) Centroid Compression
     :param dtype: (byte) PACKET_TYPES
     :param sml_cnt: (byte) Small rolling count up to 256
     :param time_stamp: (4bytes) Timecode of this Frame HH:MM:SS:FF
     :param dgm_no: (int) Fragmented packet number
-    :param num_dgm: (int) Total number of Fragmented Packets
+    :param dgm_cnt: (int) Total number of Fragmented Packets
     :param data: (bytes) the data block
 
     :return: (bytes) The Encoded packet
@@ -694,46 +694,62 @@ def encodePacket( frm_cnt, num_dets, compression, dtype, sml_cnt, time_stamp, dg
     frame = (((frm_cnt & 0x1F80) << 1) | 0x8000) | (frm_cnt & 0x007F)
 
     # encode the compression mode in the centroid count
-    count = (((num_dets & 0x0380) << 1) | 0x4000) | (num_dets & 0x007F) | ((compression & 0x0007) << 11)
+    count = (((num_dts & 0x0380) << 1) | 0x4000) | (num_dts & 0x007F) | ((compression & 0x0007) << 11)
 
     # flag for future use
     flag = 0
 
-    head_sz = 24 if dtype == PACKET_TYPES[ "imagedata" ] else 16 # 2 extra bits in an image
+    head_sz = 24 if dtype == PACKET_TYPES[ "imagedata" ] else 16 # 2 extra Halfs in an image
 
     t_h, t_m, t_s, t_f = time_stamp[0], time_stamp[1], time_stamp[2], time_stamp[3]
 
     header  = struct.pack( HEADER_PACK_FMT, frame, count, flag, dtype, sml_cnt, head_sz, t_h, t_m, t_s, t_f )
-    header += struct.pack( HEADER_DGAM_FMT, dgm_no, num_dgm )
+    header += struct.pack( HEADER_DGAM_FMT, dgm_no, dgm_cnt )
     if( dtype == PACKET_TYPES[ "imagedata" ] ):
         header += struct.pack( HEADER_IMGS_FMT, img_os, img_sz )
 
     dgram = header + data
-    print( dgram )
+    print( sml_cnt )
     return dgram
-# encodePacket( *args )
+# encodePacket( ... )
 
 def decodePacket( data ):
     """
     Decode a packet from the piCamera.  How to hand off this data? I don't know.  That's for the Arbiter in the end.
-    regs need to be handed to anyone who's interested. Images will be useful in cam setup and general shooting.
-    Centroids need to be collated into "Frames" and shipped in a timely fashion.
+    regs need to be handed to anyone who's interested. Images will be useful in cam setup, vital in ROMing, and handy in
+    general shooting.  Centroids need to be collated into "Frames" and shipped in a timely fashion.
 
     :param data: (bytes) raw data from the packet
 
     :return: (Tuple) (dtype, payload) the handler will have to work out what to do with this stuff.
     """
+    img_os, img_sz = -1, -1 # Image slice data
     packet_sz = len( data )
 
     if( packet_sz == 1 ):
-        return ( PACKET_TYPES["textslug"], "Hello" )
+        return ( PACKET_TYPES["textslug"], [-1,-1,-1,-1], -1, -1, -1, -1, -1, "Hello" )
 
     # unpack the header
     frame, count, flag, dtype, sml_cnt, head_sz, t_h, t_m, t_s, t_f = struct.unpack( HEADER_PACK_FMT, data[:12] )
-    dgm_no, num_dgm = struct.unpack( HEADER_DGAM_FMT, data[12:16] )
+    dgm_no, dgm_cnt = struct.unpack( HEADER_DGAM_FMT, data[12:16] )
+    if( dtype == PACKET_TYPES[ "imagedata" ] ):
+        img_os, img_sz = struct.unpack( HEADER_IMGS_FMT, data[16:24] )
 
-    # There, that's what you wanted, isn't it?
-    return ( dtype, data[head_sz:] )
+    # Decode Header info
+    # Frame Count
+    frm_cnt = ((frame & 0x3f00) >> 1) | (frame & 0x007f)
+    
+    # Num Dets
+    num_dts = ((count & 0x0700) >> 1) | (count & 0x007F)
+    
+    # Decode the Protocol
+    compression = ((count & 0x3800) >> 11)
+    
+    # Timestamp
+    time_stamp = [ t_h, t_m, t_s, t_f ]
+    
+    # Digest & Data
+    return ( dtype, time_stamp, num_dts, dgm_no, dgm_cnt, img_os, img_sz, data[head_sz:] )
 
 # decodePacket( data )
 
@@ -759,7 +775,7 @@ class PiCamera( object ):
         hws = {} # changed hardware settings
         for param, val in self.hw_settings.items():
             if( val.value != val.default or param in self.touched ):
-                hws[ param ] = v.value
+                hws[ param ] = val.value
 
         camera_config = {
             "HARDWARE"  : hws,
