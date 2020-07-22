@@ -53,7 +53,7 @@ class CamControl( cmd.Cmd ):
         if( " " in args ):
             args, _ = args.split( " ", 1 )
         if( args in commands ):
-            self.com_mgr.q_cmd.put( "{}:{} {}".format( self.camera_ip, verb, args ) )
+            self.com_mgr.q_cmds.put( "{}:{} {}".format( self.camera_ip, verb, args ) )
         else:
             print( "Unknown request '{}'".format( args ) )
 
@@ -64,7 +64,7 @@ class CamControl( cmd.Cmd ):
             cast = trait.dtype( val )
             if( trait.isValid( cast ) ):
                 print( "SENDING set '{}' '{}'".format( param, val ) )
-                self.com_mgr.q_cmd.put( "{}:set {} {}".format( self.camera_ip, param, val ) )
+                self.com_mgr.q_cmds.put( "{}:set {} {}".format( self.camera_ip, param, val ) )
                 trait.value = cast
                 self.camera.touched.add( param )
             else:
@@ -122,7 +122,7 @@ class CamControl( cmd.Cmd ):
             else:
                 print("Unknown '{}'".format( cmd_string ))
 
-        self.com_mgr.q_cmd.put( "{}:{}".format( self.camera_ip, output ) )
+        self.com_mgr.q_cmds.put( "{}:{}".format( self.camera_ip, output ) )
 
     def help_bulk( self ):
         print( "bulk expects a ';' separated list of commands to execute as a batch. commands should be space separated as normal" )
@@ -157,7 +157,7 @@ class CamControl( cmd.Cmd ):
     # Shortcuts
     def do_exit( self,  args ):
         # Clean shutdown
-        self.com_mgr.q_cmd.put( "{}:close close".format( self.camera_ip ) )
+        self.com_mgr.q_cmds.put( "{}:close close".format( self.camera_ip ) )
         self.com_mgr.join()
         exit(1)
 
@@ -190,14 +190,13 @@ class CamControl( cmd.Cmd ):
         self._attempt_to_read()
 
     def _attempt_to_read( self ):
-        while( not self.com_mgr.q_rep.empty() ):
-            data = self.com_mgr.q_rep.get( block=True, timeout=0.1 )
-            try:
-                ip, msg = data
-                if( ip == self.local_ip ):
+        qs = [ self.com_mgr.q_misc, self.com_mgr.q_dets ]
+        for Q in qs:
+            while( not Q.empty() ):
+                data = Q.get( block=False, timeout=0.01 )
+                src_ip, msg = data
+                if( src_ip == self.camera_ip ):
                     print( msg )
-            except ValueError:
-                print( "Error unpacking '{}'".format( data ) )
 
 
 if( __name__ == "__main__" ):

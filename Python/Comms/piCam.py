@@ -721,19 +721,25 @@ def decodePacket( data ):
 
     :param data: (bytes) raw data from the packet
 
-    :return: (Tuple) (dtype, payload) the handler will have to work out what to do with this stuff.
+    :return: (Tuple)   (dtype,      : Data Type
+                        time_stamp, : Timecode
+                        num_dts,    : Num Centroids in Packet
+                        dgm_no,     : Packet number (if frag'ed 'dets) OR Image Offset if Image
+                        dgm_cnt,    : Packet count (if frag'ed 'dets) OR Image Size if Image
+                        data )      : The data
     """
-    img_os, img_sz = -1, -1 # Image slice data
     packet_sz = len( data )
 
     if( packet_sz == 1 ):
-        return ( PACKET_TYPES["textslug"], [-1,-1,-1,-1], -1, -1, -1, -1, -1, "Hello" )
+        return ( PACKET_TYPES["textslug"], [-1,-1,-1,-1], 0, 1, 1, "Hello" )
 
     # unpack the header
     frame, count, flag, dtype, sml_cnt, head_sz, t_h, t_m, t_s, t_f = struct.unpack( HEADER_PACK_FMT, data[:12] )
-    dgm_no, dgm_cnt = struct.unpack( HEADER_DGAM_FMT, data[12:16] )
+
     if( dtype == PACKET_TYPES[ "imagedata" ] ):
-        img_os, img_sz = struct.unpack( HEADER_IMGS_FMT, data[16:24] )
+        dgm_no, dgm_cnt = struct.unpack( HEADER_IMGS_FMT, data[16:24] ) # Image os / sz have equivalent use
+    else:
+        dgm_no, dgm_cnt = struct.unpack( HEADER_DGAM_FMT, data[12:16] )
 
     # Decode Header info
     # Frame Count
@@ -749,7 +755,7 @@ def decodePacket( data ):
     time_stamp = [ t_h, t_m, t_s, t_f ]
     
     # Digest & Data
-    return ( dtype, time_stamp, num_dts, dgm_no, dgm_cnt, img_os, img_sz, data[head_sz:] )
+    return ( dtype, time_stamp, num_dts, dgm_no, dgm_cnt, data[head_sz:] )
 
 # decodePacket( data )
 
