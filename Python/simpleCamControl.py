@@ -29,11 +29,18 @@ class CamControl( cmd.Cmd ):
             "set": self.do_set,
         }
 
+
         # Setup Communication Socket
         self.local_ip = "127.0.0.1" if local_ip is None else local_ip
-        self.com_mgr = piComunicate.SimpleComs( self.local_ip )
-        self.com_mgr.start()
+        self.com_mgr = piComunicate.SimpleComms( self.local_ip )
 
+        # testing packet assembly
+        self.manager = piComunicate.SysManager()
+        self.det_mgr = piComunicate.AssembleDetFrame( self.com_mgr.q_dets, self.manager )
+
+        # begin
+        self.com_mgr.start()
+        self.det_mgr.start()
         self.intro = "Camera Control Console, operating camera '{}' from '{:0>3}'".format( self.camera_ip, self.local_ip )
 
     def do_EOF( self, args ):
@@ -190,13 +197,15 @@ class CamControl( cmd.Cmd ):
         self._attempt_to_read()
 
     def _attempt_to_read( self ):
-        qs = [ self.com_mgr.q_misc, self.com_mgr.q_dets ]
-        for Q in qs:
-            while( not Q.empty() ):
-                data = Q.get( block=False, timeout=0.01 )
-                src_ip, msg = data
-                if( src_ip == self.camera_ip ):
-                    print( msg )
+        if( not self.det_mgr.q_out.empty() ):
+            data = self.det_mgr.q_out.get()
+            print( data )
+
+        while( not self.com_mgr.q_misc.empty() ):
+            data = self.com_mgr.q_misc.get( block=False, timeout=0.001 )
+            src_ip, msg = data
+            if( src_ip == self.camera_ip ):
+                print( msg )
 
 
 if( __name__ == "__main__" ):

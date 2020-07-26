@@ -631,6 +631,7 @@ PACKET_TYPES_REV = { v:k for k,v in PACKET_TYPES.items() }
 ROID_COMPRESSION_REV = { v:k for k,v in ROID_COMPRESSION.items() }
 
 HEADER_PACK_FMT = ">HHBBBBBBBB"
+HEADER_READ_FMT = ">HHBBBBI" # Read the tc as an int
 HEADER_DGAM_FMT = "<HH"
 HEADER_IMGS_FMT = ">HH"
 
@@ -708,9 +709,7 @@ def encodePacket( frm_cnt, num_dts, compression, dtype, sml_cnt, time_stamp, dgm
     if( dtype == PACKET_TYPES[ "imagedata" ] ):
         header += struct.pack( HEADER_IMGS_FMT, img_os, img_sz )
 
-    dgram = header + data
-    print( sml_cnt )
-    return dgram
+    return header + data
 # encodePacket( ... )
 
 def decodePacket( data ):
@@ -734,14 +733,14 @@ def decodePacket( data ):
         return ( PACKET_TYPES["textslug"], [-1,-1,-1,-1], 0, 1, 1, "Hello" )
 
     # unpack the header
-    frame, count, flag, dtype, sml_cnt, head_sz, t_h, t_m, t_s, t_f = struct.unpack( HEADER_PACK_FMT, data[:12] )
+    frame, count, flag, dtype, sml_cnt, head_sz, time_stamp = struct.unpack( HEADER_READ_FMT, data[:12] )
 
     if( dtype == PACKET_TYPES[ "imagedata" ] ):
         dgm_no, dgm_cnt = struct.unpack( HEADER_IMGS_FMT, data[16:24] ) # Image os / sz have equivalent use
     else:
         dgm_no, dgm_cnt = struct.unpack( HEADER_DGAM_FMT, data[12:16] )
 
-    # Decode Header info
+    # Decode Header info -------------------------------------------------------
     # Frame Count
     frm_cnt = ((frame & 0x3f00) >> 1) | (frame & 0x007f)
     
@@ -750,9 +749,6 @@ def decodePacket( data ):
     
     # Decode the Protocol
     compression = ((count & 0x3800) >> 11)
-    
-    # Timestamp
-    time_stamp = [ t_h, t_m, t_s, t_f ]
     
     # Digest & Data
     return ( dtype, time_stamp, num_dts, dgm_no, dgm_cnt, data[head_sz:] )
@@ -765,8 +761,9 @@ class PiCamera( object ):
         Also provides conveniences to dump as a 'bulk' statement, and JSON
         import / export functions
     """
-    def __init__( self, camera_ip ):
+    def __init__( self, camera_ip, id=None ):
         self.camera_ip = camera_ip
+        self.id = id
         self._stateReset()
 
     def _stateReset( self ):
@@ -822,7 +819,7 @@ class PiCamera( object ):
 
     def toBulk( self ):
         """
-        Create a bulk comMand to configure the camera's hardware.
+        Create a bulk command to configure the camera's hardware.
 
         :return: (str) Bulk configuration Command
         """
