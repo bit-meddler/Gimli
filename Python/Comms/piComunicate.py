@@ -1,4 +1,6 @@
-""" Communication routines to send & receive to a piCCam"""
+""" Communication routines to send & receive to a piCCam
+"""
+import json
 from queue import SimpleQueue, Empty
 import select
 import socket
@@ -15,13 +17,14 @@ RECV_BUFF_SZ   = 10240 # bigger than a Jumbo Frame
 def listIPs():
     """
     Conveniance to list available IP addresses on the system, ignoring Local Link and 127.0.0.1
+    seems only to work on windows ATM
     :return: (list) List of detected real ip addresses
     """
     candidates = []
     for ip in socket.getaddrinfo( socket.gethostname(), None ):
         if( ip[ 0 ] == socket.AF_INET ):
             addr = ip[4][0]
-            if( (not addr.startswith( "169.254.")) and (addr != "127.0.0.1") ):
+            if( (not addr.startswith( "169.254.")) and (not addr.startswith( "127.0.")) ):
                 candidates.append( addr )
     return sorted( candidates )
 
@@ -210,9 +213,6 @@ class AssembleDetFrame( threading.Thread ):
         self.q_orph = SimpleQueue()
         self.q_out  = SimpleQueue()
 
-        # Framing data
-        self.current_time = 0
-
         # sysManager
         self.manager = manager
         self.last_hash = -1 #?
@@ -255,11 +255,12 @@ class AssembleDetFrame( threading.Thread ):
             self.ship_sucess = np.append( self.ship_sucess, 0 )
 
         # Are we forced to Ship?
-        if( time_stamp > self.current_time ):
+        if( time_stamp > self.manager.current_time ):
+            # todo: guard against shipping an empty frame!
             print( "Compelled Ship" )
             self.ship()
-            self.current_time = time_stamp
-        elif( time_stamp < self.current_time ):
+            self.manager.current_time = time_stamp
+        elif( time_stamp < self.manager.current_time ):
             # this is an orphan!
             self.q_orph.put( (src_ip, packet) )
             return
@@ -349,80 +350,3 @@ class AssembleDetFrame( threading.Thread ):
         self.assembled_idxs = np.full( (self.manager.num_cams,), 0, dtype=np.int32 )
 
 # class AssembleDetFrame
-
-
-class SysManager( object ):
-    """
-    Class to manage system topology, hold camera table. manage camera_ids
-    """
-    def __init__( self ):
-        self._reset()
-
-    def _reset( self ):
-        self.cam_dict = {}
-        self.rev_dict = {}
-        self.num_cams = 0
-        self.sys_hash = 0
-        self.old_hash = {}
-        self.bad_cams = []
-        self.last_dgm = {}
-
-    def getCamId( self, cam_ip, timestamp ):
-        """
-        Get a camera's ID.  if it's a new camera, update the table and announce a state change.
-        Also note the last contact time for the camera, could help with diagnostics.
-        This gets run a lot!
-
-        :param cam_ip: Camera ip
-        :return: id, state_changed
-        """
-        state_changed = False
-        try:
-            cam_id = self.cam_dict[ cam_ip ]
-        except KeyError:
-            # New Camera Discovered, add to cam list
-            cam_id = self.num_cams # 0 index :)
-            self.num_cams += 1
-            self.cam_dict[ cam_ip ] = cam_id
-            self.rev_dict[ cam_id ] = cam_ip
-            self._updateHash()
-            state_changed = True
-
-        self.last_dgm[ cam_id ] = timestamp
-        return (cam_id, state_changed)
-
-    def _updateHash( self ):
-        self.sys_hash += 1
-        self.old_hash[ self.sys_hash ] = self.getCamList()
-
-    def flagBadId( self, cam_id ):
-        if( not cam_id in self.bad_cams ):
-            self.bad_cams.append( cam_id )
-        # leave it to the UI?
-
-    def load( self, camip_list ):
-        # setup ids from the given list, fully resets state
-        self._reset()
-        self.cam_dict = { ip: n for n, ip in enumerate( camip_list ) }
-        self.rev_dict = { val:key for key, val in self.cam_dict.items() }
-        self.num_cams = len( self.cam_dict )
-
-    def remarshelCameras( self ):
-        """
-        Sort the cameras to be ordered by ip.  This will invalidate and frame assembly going on and corrupt your
-        calibration. use the supplied "rename map" to fix you calibration.
-        :return: (dict) rename_map - lut of old to new camera IDs
-        """
-        #? Lock ?
-        new_dict = { ip:n for n,ip in enumerate( sorted( self.cam_dict.keys() ) ) }
-        rename_map = { val:new_dict[key] for key, val in self.cam_dict.items() }
-        self.cam_dict.clear()
-        self.cam_dict = new_dict
-        self.rev_dict = { val:key for key, val in self.cam_dict.items() }
-        self._updateHash()
-
-        return rename_map
-
-    def getCamList( self ):
-        return ( c for c in sorted( self.cam_dict.items(), key=lambda x: x[1] ) )
-

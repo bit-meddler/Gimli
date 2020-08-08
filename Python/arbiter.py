@@ -22,7 +22,8 @@ import os, sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
 
-from Comms.piComunicate import SysManager, AssembleDetFrame, SimpleComms
+from Comms              import SysManager
+from Comms.piComunicate import AssembleDetFrame, SimpleComms
 
 
 class Arbiter( object ):
@@ -50,10 +51,16 @@ class Arbiter( object ):
         self.det_mgr.start()
         self.com_mgr.start()
 
+        # Say hello to the cameras
+        self.com_mgr.q_cmds.put("192.168.0.32:get hello")
+
         while( self.running.isSet() ):
             # look for commands from clients
 
-            # Check for Dets to send out
+            # Check for Dets or Images to send out
+            # TODO: In the future, merge frames from different families of cameras
+
+            # Look for misc & Orphans from cameraComms
             pass
 
 if( __name__ == "__main__" ):

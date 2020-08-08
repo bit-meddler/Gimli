@@ -11,6 +11,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
 from Comms import piCam
 from Comms import piComunicate
+from Comms import SysManager
 
 class CamControl( cmd.Cmd ):
     _short_set_cmds = ( x for x in piCam.KNOWN_SET_PARAMS if not x.startswith("maskzone") )
@@ -35,7 +36,7 @@ class CamControl( cmd.Cmd ):
         self.com_mgr = piComunicate.SimpleComms( self.local_ip )
 
         # testing packet assembly
-        self.manager = piComunicate.SysManager()
+        self.manager = SysManager()
         self.det_mgr = piComunicate.AssembleDetFrame( self.com_mgr.q_dets, self.manager )
 
         # begin
@@ -212,7 +213,7 @@ if( __name__ == "__main__" ):
     ips =  piComunicate.listIPs()
     local_ip = ips[0] if len(ips)>0 else "192.168.0.20"
 
-    DEFAULT_TARGET = "192.168.0.21"
+    DEFAULT_TARGET = "192.168.0.34"
 
     parser = argparse.ArgumentParser()
     parser.add_argument( "-c", action="store", dest="camera_ip", default=DEFAULT_TARGET, help="Camera to Control" )
