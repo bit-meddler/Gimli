@@ -14,7 +14,7 @@ from Comms import piComunicate
 from Comms import SysManager
 
 class CamControl( cmd.Cmd ):
-    _short_set_cmds = ( x for x in piCam.KNOWN_SET_PARAMS if not x.startswith("maskzone") )
+    _short_set_cmds = ( x for x in piCam.CAM_SET_PARAMS if not x.startswith("maskzone") )
 
     def __init__( self, camera_ip, local_ip=None ):
         super( CamControl, self ).__init__()
@@ -67,7 +67,7 @@ class CamControl( cmd.Cmd ):
 
     def do_set( self, args ):
         param, val = args.lower().split( " ", 1 )
-        if( param in piCam.KNOWN_SET_PARAMS ):
+        if( param in piCam.CAM_SET_PARAMS ):
             trait = self.camera.hw_settings[ param ]
             cast = trait.dtype( val )
             if( trait.isValid( cast ) ):
@@ -83,7 +83,7 @@ class CamControl( cmd.Cmd ):
             print( "Unknown request '{}'".format( args ) )
 
     def complete_set( self, text, line, start_index, end_index ):
-            return self._genericCompleter( piCam.KNOWN_SET_PARAMS, text )
+            return self._genericCompleter( piCam.CAM_SET_PARAMS, text )
 
     def help_set( self ):
         print("Set a Camera Paramiter eg: 'set strobe 15'. param name is all lower case")
@@ -111,18 +111,18 @@ class CamControl( cmd.Cmd ):
                 imperative, data = cmd_string.split( " ", 1 )
 
                 if( imperative == "exe" ):
-                    if( data in piCam.KNOWN_EXE_PARAMS ):
+                    if( data in piCam.CAM_EXE_PARAMS ):
                         output += "{} {};".format( imperative, data )
                         continue
 
                 if( imperative == "get" ):
-                    if (data in piCam.KNOWN_REQ_PARAMS):
+                    if (data in piCam.CAM_REQ_PARAMS):
                         output += "{} {};".format( imperative, data )
                         continue
 
                 if( imperative == "set" ):
                     param, val = data.lower().split( " ", 1 )
-                    if( param in piCam.KNOWN_SET_PARAMS ):
+                    if( param in piCam.CAM_SET_PARAMS ):
                         if( self.camera.validateSet( param, val ) ):
                             output += "{} {} {};".format( imperative, param, val )
                 else:
@@ -138,22 +138,22 @@ class CamControl( cmd.Cmd ):
         print( "a 'get regshi' will automatically be executed after a bulk operation" )
 
     def do_exe( self, args ):
-        self._genericOneCommand( args, piCam.KNOWN_EXE_PARAMS, "exe" )
+        self._genericOneCommand( args, piCam.CAM_EXE_PARAMS, "exe" )
 
     def complete_exe( self, text, line, start_index, end_index ):
-        return self._genericCompleter( piCam.KNOWN_EXE_PARAMS, text )
+        return self._genericCompleter( piCam.CAM_EXE_PARAMS, text )
 
     def help_exe( self ):
-        print(textwrap.fill( "Available paramiters: '{}'".format( "', '".join( piCam.KNOWN_EXE_PARAMS ) ), width=80) )
+        print(textwrap.fill( "Available paramiters: '{}'".format( "', '".join( piCam.CAM_EXE_PARAMS ) ), width=80) )
 
     def do_get( self, args ):
-        self._genericOneCommand( args, piCam.KNOWN_REQ_PARAMS, "get" )
+        self._genericOneCommand( args, piCam.CAM_REQ_PARAMS, "get" )
 
     def complete_get( self, text, line, start_index, end_index ):
-        return self._genericCompleter( piCam.KNOWN_REQ_PARAMS, text )
+        return self._genericCompleter( piCam.CAM_REQ_PARAMS, text )
 
     def help_get( self ):
-        print(textwrap.fill( "Available paramiters: '{}'".format( "', '".join( piCam.KNOWN_REQ_PARAMS ) ), width=80) )
+        print(textwrap.fill( "Available paramiters: '{}'".format( "', '".join( piCam.CAM_REQ_PARAMS ) ), width=80) )
 
     # presets
     def do_save( self, args ):
@@ -183,7 +183,7 @@ class CamControl( cmd.Cmd ):
         num = int( args.strip() )
         for i in range( num ):
             # pick a random trait
-            param = random.choice( piCam.KNOWN_SET_PARAMS )
+            param = random.choice( piCam.CAM_SET_PARAMS )
             trait = self.camera.hw_settings[ param ]
             val = random.randrange( trait.min, trait.max )
             self.do_set( "{} {}".format( param, val ) )
