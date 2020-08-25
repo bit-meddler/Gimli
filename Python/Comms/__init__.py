@@ -13,7 +13,7 @@ class CameraTraits( object ):
 
         mode is a combination of Read, Write, Advanced, eXclude = "rwa", "rx"
     """
-    def __init__(self, name, default, min, max, cast, value=None, units=None, human_name=None, desc=None, mode=None ):
+    def __init__(self, name, default, min, max, dtype, value=None, units=None, human_name=None, desc=None, mode=None ):
         # required
         self.name = name
         self.default = default

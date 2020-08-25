@@ -23,7 +23,7 @@ class SimpleTimecode( object ):
         return "{}:{}:{}:{}.({})".format( *self.toInts() )
 
     def toBCDlist( self ):
-        return list( map( ord, self.toInts()[:-1] ) )
+        return self.toInts()[:-1]
 
     def setQSM( self, quanta ):
         self._qsm = quanta
