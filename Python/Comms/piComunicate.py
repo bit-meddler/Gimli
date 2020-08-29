@@ -1,7 +1,13 @@
 """ Communication routines to send & receive to a piCCam
 """
 import json
-from queue import SimpleQueue, Empty
+from queue import Empty
+
+try: # Weird issue on my linux VM not finding SimpleQueue, yes it's 3
+    from queue import SimpleQueue
+except ImportError:
+    from queue import Queue as SimpleQueue
+
 import select
 import socket
 import threading
@@ -31,20 +37,19 @@ def listIPs():
 
 class SimpleComms( threading.Thread ):
 
-    def __init__( self, host_ip=None ):
+    def __init__( self, manager, host_ip=None ):
         # Thread setup
         super( SimpleComms, self ).__init__()
         self.daemon = True
 
+        # System Manager
+        self.manager = manager
+
         # Queues to communicate in and out of the thread
-        # cmds: commands into the communicator
-        # dets: Centroid fragments, Light Hi priority, need to be packetized
-        # imgs: Image Fragments, Heavy low priority, need to be assembled
-        # misc: Other Camera Reports
-        self.q_cmds = SimpleQueue()
-        self.q_dets = SimpleQueue()
-        self.q_imgs = SimpleQueue()
-        self.q_misc = SimpleQueue()
+        self.q_cmds = SimpleQueue() # commands into the communicator
+        self.q_dets = SimpleQueue() # Centroid fragments, Light Hi priority, need to be packetized
+        self.q_imgs = SimpleQueue() # Image Fragments, Heavy low priority, need to be assembled
+        self.q_misc = SimpleQueue() # Other Camera Reports
 
         # Activity Flag
         self.running = threading.Event()
@@ -101,6 +106,10 @@ class SimpleComms( threading.Thread ):
 
     def handlePacket( self, src_ip, data ):
         dtype, time_stamp, num_dts, dgm_no, dgm_cnt, msg = piCam.decodePacket( data )
+
+        # get cam_id. any device broadcasting to the Server ip should get placed in the sys_man
+        # but this stops packet assembler doing the right thing :(
+        #cam_id, is_new = self.manager.getCamId( src_ip, time_stamp )
 
         if( dtype > piCam.PACKET_TYPES["imagedata"] ):
             # "misc" Data: Regs, Text, Version Info
@@ -243,11 +252,16 @@ class AssembleDetFrame( threading.Thread ):
 
     def processPacket( self, src_ip, packet ):
         time_stamp, num_dts, dgm_no, dgm_cnt, dets = packet
+        #print( "dts", num_dts )
+
         data_len = len( dets )
 
-        cam_id, new = self.manager.getCamId( src_ip, time_stamp )
+        cam_id, is_new = self.manager.getCamId( src_ip, time_stamp )
 
-        if( new ):
+        #print( "cam", cam_id )
+
+        if( is_new ):
+            #print( self.manager )
             # Make space for the new camera in the Assembly, and initialize
             self.frame_assemble.append( np.array([], dtype=np.uint8) )
             self.packets_remain = np.append( self.packets_remain, self.UNKNOWN_REMAINS )
@@ -257,11 +271,13 @@ class AssembleDetFrame( threading.Thread ):
         # Are we forced to Ship?
         if( time_stamp > self.manager.current_time ):
             # todo: guard against shipping an empty frame!
-            print( "Compelled Ship" )
+            #print( "Compelled Ship" )
             self.ship()
+            # After shipping, as we include the tc with the frame
             self.manager.current_time = time_stamp
         elif( time_stamp < self.manager.current_time ):
             # this is an orphan!
+            print( "Orphen" )
             self.q_orph.put( (src_ip, packet) )
             return
         
@@ -273,20 +289,25 @@ class AssembleDetFrame( threading.Thread ):
         # add this packet's detections to the assembly buffer
         start_idx = self.assembled_idxs[ cam_id ]
         end_idx = start_idx + data_len
+        #print( start_idx, end_idx, len( self.frame_assemble[ cam_id ] ), data_len )
+        if( end_idx > len( self.frame_assemble[ cam_id ] ) ):
+            print( "tried to Overflow", self.manager.current_time )
+            return # Discard this packet, but I wonder how this happens
         self.frame_assemble[ cam_id ][ start_idx:end_idx ] = np.frombuffer( dets, dtype=np.uint8 )
         self.assembled_idxs[ cam_id ] = end_idx
         self.packets_remain[ cam_id ] -= 1
 
         # Test for opportunistic ship (all packets assembled)
         if( np.all( self.packets_remain < 1 ) ):
-            print( "Opportunistic Ship" )
+            #print( "Opportunistic Ship" )
             self.ship()
 
     def ship( self ):
         # Pack
         out = np.array([], dtype=np.uint8) # fill with meta data??? timestamp, sysHash
         idxs = []
-        for i in range( self.manager.num_cams ):
+        num_cams = len( self.frame_assemble )
+        for i in range( num_cams ):
             idxs.append( len( out ) )
             out = np.append( out, self.frame_assemble[i][0:self.assembled_idxs[i]] ) # as many as we got
         idxs.append( len( out ) )
@@ -323,7 +344,7 @@ class AssembleDetFrame( threading.Thread ):
         out[:,2] += tmp.astype( np.float32 ) * self.FRAC_4BIT
 
         # Ship
-        self.q_out.put( (idxs, out) )
+        self.q_out.put( (self.manager.current_time, idxs, out) )
         self.frames_sent += 1
 
         # do Health Check

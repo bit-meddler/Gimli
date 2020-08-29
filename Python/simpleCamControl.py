@@ -22,6 +22,7 @@ class CamControl( cmd.Cmd ):
         _, _, _, cam_no = camera_ip.split( "." )
         self.prompt = "Camera:{: >3}> ".format( cam_no )
         self.camera = piCam.PiCamera( camera_ip )
+        self.manager = SysManager()
 
         # selector for imperatives
         self._HANDLER = {
@@ -30,13 +31,11 @@ class CamControl( cmd.Cmd ):
             "set": self.do_set,
         }
 
-
         # Setup Communication Socket
         self.local_ip = "127.0.0.1" if local_ip is None else local_ip
-        self.com_mgr = piComunicate.SimpleComms( self.local_ip )
+        self.com_mgr = piComunicate.SimpleComms( self.manager, self.local_ip )
 
         # testing packet assembly
-        self.manager = SysManager()
         self.det_mgr = piComunicate.AssembleDetFrame( self.com_mgr.q_dets, self.manager )
 
         # begin

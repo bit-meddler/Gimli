@@ -996,7 +996,7 @@ def decodePacket( data ):
     packet_sz = len( data )
 
     if( packet_sz == 1 ):
-        return ( PACKET_TYPES["textslug"], [-1,-1,-1,-1], 0, 1, 1, "Hello" )
+        return ( PACKET_TYPES["textslug"], [-1,-1,-1,-1], 0, 1, 1, b"Hello" )
 
     # unpack the header
     frame, count, flag, dtype, sml_cnt, head_sz, time_stamp = struct.unpack( HEADER_READ_FMT, data[:12] )

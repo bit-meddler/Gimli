@@ -5,9 +5,13 @@ Classes at the module level are architecture agnostic.  So a concrete example, p
 piComunicate is the communication routines that are specific to that camera.  In the future there might be an "odroidCam" or
 an "arduinoCam" which will have different implementation and communication methods.  Perhaps one gets C&C over telnet.
 That is why C&C is done in a "Platonic Language" that is not related to implementation.
+
+We will also define the Arbiter's C&C Language which would be used by multipule clients without underlying knowlage of
+camera hardware and implementation details.
 """
 class CameraTraits( object ):
-    """ Object describing controllable traits of a camera. It holds GUI presentable data
+    """ ToDo: NOPE! This is UI, not really anything to do with comunications
+        Object describing controllable traits of a camera. It holds GUI presentable data
         like a human readable name, description etc, and implementation specific data
         like how to set the value (which will be very camera dependant)
 
@@ -36,6 +40,12 @@ class CameraTraits( object ):
 class SysManager( object ):
     """
     Class to manage system topology, hold camera table. manage camera_ids, know camera types
+    Might pass implementation specific helpers back up to an Arbiter for converting camera detections
+    to an NDC representation, so everything outside of Arbiter is Implementation Agnostic.
+
+    This is either too complex, or not complex enough.
+
+    Would a CamControl UI have it's own sys manager internall that's updated by a P/S Topic from Arbiter?
 
     Assumptions: IP address is fixed so camera type is consistent between sessions
     """
@@ -55,7 +65,13 @@ class SysManager( object ):
 
         self.current_time = 0
 
-    def getCamId( self, cam_ip, timestamp ):
+    def __str__( self ):
+        out = ""
+        for k, v, in self.cam_dict.items():
+            out += "{}:{}\n".format( k, v )
+        return out
+
+    def getCamId( self, cam_ip, timestamp=None ):
         """
         Get a camera's ID.  if it's a new camera, update the table and announce a state change.
         Also note the last contact time for the camera, could help with diagnostics.
@@ -69,15 +85,24 @@ class SysManager( object ):
             cam_id = self.cam_dict[ cam_ip ]
         except KeyError:
             # New Camera Discovered, add to cam list
-            cam_id = self.num_cams  # 0 index :)
-            self.num_cams += 1
-            self.cam_dict[ cam_ip ] = cam_id
-            self.rev_dict[ cam_id ] = cam_ip
-            self._updateHash()
+            cam_id = self.manualAdd( cam_ip )
             state_changed = True
 
-        self.last_dgm[ cam_id ] = timestamp
+        if( timestamp is not None ):
+            self.last_dgm[ cam_id ] = timestamp
+
         return (cam_id, state_changed)
+
+    def getCamIP( self, cam_id ):
+        return self.rev_dict.get( cam_id, None )
+
+    def manualAdd( self, cam_ip ):
+        cam_id = self.num_cams
+        self.num_cams += 1
+        self.cam_dict[ cam_ip ] = cam_id
+        self.rev_dict[ cam_id ] = cam_ip
+        self._updateHash()
+        return cam_id
 
     def _updateHash( self ):
         self.sys_hash += 1
@@ -132,4 +157,37 @@ class SysManager( object ):
 
     def getCamList( self ):
         return (c for c in sorted( self.cam_dict.items(), key=lambda x: x[ 1 ] ))
+
+
+# Arbiter Consts and Settings
+# Coms Ports
+ABT_PORT_SYSCNC   = 5555 # Router/Req for System Control
+ABT_PORT_SYSSTATE = 5566 # P/S for System State / Camera Info
+ABT_PORT_DATA     = 5577 # MoCap Data & Images
+
+ABT_TOPIC_STATE = "STATE" # System State
+ABT_TOPIC_TRANS = "TRANS" # Transport
+ABT_TOPIC_ROIDS = "ROIDS" # Centroid Data
+ABT_TOPIC_IMAGE = "IMAGE" # Image Data
+ABT_TOPIC_LOSTD = "LOSTD" # Orphen Daat
+
+# Pre cast to Bytes for conveniance with ZMQ
+ABT_TOPIC_STATE_B = bytes( ABT_TOPIC_STATE, "utf-8" )
+ABT_TOPIC_TRANS_B = bytes( ABT_TOPIC_TRANS, "utf-8" )
+ABT_TOPIC_ROIDS_B = bytes( ABT_TOPIC_ROIDS, "utf-8" )
+ABT_TOPIC_IMAGE_B = bytes( ABT_TOPIC_IMAGE, "utf-8" )
+ABT_TOPIC_LOSTD_B = bytes( ABT_TOPIC_LOSTD, "utf-8" )
+
+# SYS Verbs
+# CAM_EXE, SYN_EXE, GET, SET, TRY ???
+
+
+
+
+
+
+
+
+
+
 
