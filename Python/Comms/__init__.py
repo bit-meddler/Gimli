@@ -9,6 +9,11 @@ That is why C&C is done in a "Platonic Language" that is not related to implemen
 We will also define the Arbiter's C&C Language which would be used by multipule clients without underlying knowlage of
 camera hardware and implementation details.
 """
+
+import struct
+import zmq
+
+
 class CameraTraits( object ):
     """ ToDo: NOPE! This is UI, not really anything to do with comunications
         Object describing controllable traits of a camera. It holds GUI presentable data
@@ -181,12 +186,39 @@ ABT_TOPIC_LOSTD_B = bytes( ABT_TOPIC_LOSTD, "utf-8" )
 # SYS Verbs
 # CAM_EXE, SYN_EXE, GET, SET, TRY ???
 
+class ArbiterControl( object ):
+    """
+    ArbiterControl can be used in other apps to emit C&C to the Arbiter.  In future
+    embodyments it might manage the hand-off between inproc and tcp messaging for
+    a client.
+    """
 
+    def __init__( self ):
+        # Setup command socket
+        self._zctx = zmq.Context()
+        self.comand = self._zctx.socket( zmq.REQ )
+        self.comand.connect( "tcp://localhost:{}".format( ABT_PORT_SYSCNC ) )
+        # recipts
+        self.last_ack = -1
 
+    def send( self, verb, noun, value=None, tgt_list=None ):
+        # compose and emit a message
+        self.comand.send( bytes( verb, "utf-8" ), zmq.SNDMORE )
+        self.comand.send( bytes( noun, "utf-8" ), zmq.SNDMORE )
+        if( value is not None ):
+            self.comand.send( bytes( str( value ), "utf-8" ), zmq.SNDMORE )
+        for target in tgt_list:
+            self.comand.send( bytes( str( target ), "utf-8" ), zmq.SNDMORE )
+        self.comand.send( b"K?" )
 
+        # get ack - BLOCKING!
+        resp = self.comand.recv()
+        self.last_ack = struct.unpack( "I", resp )
+        print( "got '{}'".format( self.last_ack ) )
 
-
-
+    def cleanClose( self ):
+        self.comand.close()
+        self._zctx.term()
 
 
 

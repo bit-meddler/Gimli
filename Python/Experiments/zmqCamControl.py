@@ -197,6 +197,8 @@ class CamControl( cmd.Cmd ):
     def do_exit( self,  args ):
         # Clean shutdown
         self._emit( "close", "close" )
+        self.comand.close()
+        self._zctx.term()
         exit(1)
 
     def do_hello( self, args ):

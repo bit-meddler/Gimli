@@ -25,6 +25,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 import numpy as np
 np.set_printoptions( precision=3, suppress=True )
 
+import struct
 import threading
 import zmq
 
@@ -47,6 +48,7 @@ class Arbiter( object ):
         #self.img_mgr = AssembleImages( self.com_mgr.q_imgs, self.system )
 
         # Client Comunications (ZMQ)
+        self.acks = 0
         self._zctx = zmq.Context()
 
         self.cnc_in = self._zctx.socket( zmq.ROUTER )
@@ -72,16 +74,22 @@ class Arbiter( object ):
         verb = dgm[ 2 ]
         noun = dgm[ 3 ]
 
-        tgt_idx = 5 if (verb == b"set") else 4
+        # setting like msg?
+        setting = False
+        tgt_idx = 4
+        if( verb == b"set" or verb == b"try" ):
+            setting = True
+            tgt_idx = 5
+
+        # Multi-target flood message
         tgt_out = len( dgm ) - 1
         tgts = dgm[ tgt_idx: tgt_out ]
-
         for tgt in tgts:
-            ip = self.system.getCamIP( int( str( tgt ) ) )
+            ip = self.system.getCamIP( int( tgt.decode("utf-8") ) )
             if( ip is None ):
                 print("Unknown Cam id")
                 continue
-            if( verb == b"set" ):
+            if( setting ):
                 self.com_mgr.q_cmds.put( "{}:set {} {}".format( ip, noun, dgm[ 4 ] ) )
             else: #get exe
                 self.com_mgr.q_cmds.put( "{}:{} {}".format( ip, verb, noun ) )
@@ -99,9 +107,15 @@ class Arbiter( object ):
             coms = dict( self.poller.poll( 0 ) )
             if (coms.get( self.cnc_in ) == zmq.POLLIN):
                 dgm = self.cnc_in.recv_multipart()
-                # Just ack it for now, maybe we could test the validity of the request?
-                self.cnc_in.send_multipart( [ dgm[ 0 ], b'', b'K' ] )
+                # Should we could test the validity of the request?
+                # Acnowlage recipt, and give a "Message Number"
+                self.acks += 1
+                ack = struct.pack( "I", self.acks )
+                self.cnc_in.send_multipart( [ dgm[ 0 ], b'', ack ] )
                 self.handleCNC( dgm )
+
+                # Emit a pub saying msg 'ack' has been done.
+                self.data_pub.send_multipart( [ Comms.ABT_TOPIC_STATE_B, b"", b"DID", ack ] )
 
             # Check for Dets or Images to send out
             # TODO: In the future, merge frames from different families of cameras

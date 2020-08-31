@@ -2,7 +2,9 @@ from functools import partial
 import logging
 from PySide2 import QtCore, QtGui, QtWidgets, QtOpenGL
 from OpenGL import GL, GLU, GLUT 
-import sys
+
+import sys, os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
 logging.basicConfig()
 log = logging.getLogger( __name__ )
@@ -10,6 +12,8 @@ log.setLevel( logging.DEBUG )
 
 detailed_log = logging.Formatter( "%(asctime)s.%(msecs)04d [%(levelname)-8s][%(name)-16s] %(message)s {%(filename)s@%(lineno)s}", "%y%m%d %H:%M:%S" )
 terse_log = logging.Formatter( "%(asctime)s.%(msecs)04d [%(levelname)-8s] %(message)s", "%y%m%d %H:%M:%S" )
+
+from Comms import ArbiterControl
 
 # Look and Feel Helpers
 def _getStdIcon( icon_enum ):
@@ -103,8 +107,9 @@ class Camera( Selectable ):
     HAS_ADV = True
     TRAIT_ORDER = [ "strobe", "shutter", "threshold", "fps", "mtu", "numdets", "iscale", "idelay", "arpdelay" ]
     PRIORITY = 5
-    def __init__( self, name ):
+    def __init__( self, name, id ):
         self.name = name
+        self.id = id
 
     def getAttrs( self, advanced=False ):
         if( advanced ):
@@ -365,8 +370,8 @@ class QDockingAttrs( QtWidgets.QDockWidget ):
             # Knob
             knob = QKnob( self, hi, lo, default, desc )
             grid.addLayout( knob, depth, 1 )
-            knob.valueChanged.connect( partial( self.valueChanged, key, "Try" ) )
-            knob.valueSet.connect( partial( self.valueSet, key, "Set" ) )
+            knob.valueChanged.connect( partial( self.valueChanged, key, "try" ) )
+            knob.valueSet.connect( partial( self.valueSet, key, "set" ) )
 
             # fix [Tab] Order
             if( len( box_list ) > 0 ):
@@ -384,9 +389,13 @@ class QDockingAttrs( QtWidgets.QDockWidget ):
     def valueChanged( self, key, action, value ):
         # This info needs to work it's way back up to the app and MVC for the data
         print( key, action, value )
+        app = self.parent()
+        app.sendCNC( action, key, value )
 
     def valueSet( self, key, action, value ):
         print( key, action, value )
+        app = self.parent()
+        app.sendCNC( action, key, value )
 
     def selectionChanged( self, sel_list=None ):
         sel_list = sel_list or [ (None) ]  # Nothing selected
@@ -478,16 +487,19 @@ class QDockingOutliner( QtWidgets.QDockWidget ):
 
         def __init__(self, parent ):
             super( QDockingOutliner.SceneTree, self ).__init__( parent )
-            self.setSelectionBehavior( QtWidgets.QTableView.SelectRows )
+            self.setSelectionBehavior( QtWidgets.QAbstractItemView.SelectRows )
+            self.setSelectionMode( QtWidgets.QAbstractItemView.MultiSelection )
             self.setHeaderHidden( True )
 
         def selectionChanged( self, new, old ):
-            indexs = new.indexes()
+            # Ignore old Vs New, just directly get the selected list
+            selects = self.selectionModel().selectedRows()
+
             app = self.parent().parent()
 
             app.selection_que.clear()
-            if( len( indexs ) > 0 ):
-                for idx in indexs:
+            if( len( selects ) > 0 ):
+                for idx in selects:
                     itm = self.itemFromIndex( idx )
                     if( hasattr( itm, "_data" ) ):
                         app.selection_que.append( itm._data )
@@ -500,8 +512,8 @@ class QDockingOutliner( QtWidgets.QDockWidget ):
         self._buildUI()
 
     def _populate( self ):
-        example_scene = {
-            "Cameras" : { "Cam_01": Camera("Cam_01"), "Cam_02": Camera("Cam_02") },
+        example_scene = { # All a bit bogus, this needs tobe worked out from the sysman
+            "Cameras" : { "Cam_01": Camera("Cam_01", 0), "Cam_02": Camera("Cam_02", 1) },
             "Scene" : { "Cube" : Mesh() }
         }
         for k, v in example_scene.items():
@@ -541,10 +553,18 @@ class QMain( QtWidgets.QMainWindow ):
         self.selection_observers = []
         self._actions = {}
 
+        # Arbiter Comms channels
+        self.command = ArbiterControl()
+
         self._buildUI()
         self.show()
         self.logNreport( "Launched", 5000 )
         log.info( "another" )
+
+    def sendCNC( self, verb, noun, value=None ):
+        tgt_list = list( map( lambda x: x.id, self.selection_que ) )
+        self.command.send( verb, noun, value, tgt_list )
+        log.info( "SENT: {}, {}, {} to {}".format( verb, noun, value, tgt_list ) )
         
     def logNreport( self, msg, dwel=1200 ):
         log.info( msg )
@@ -554,7 +574,13 @@ class QMain( QtWidgets.QMainWindow ):
         # tell oservers it's changed
         for obs in self.selection_observers:
             obs.selectionChanged( self.selection_que )
-
+            
+        report = "None"
+        if( len( self.selection_que ) > 0 ):
+            report = "{}: {}".format( type(self.selection_que[0]), ", ".join( map( lambda x: str(x.id), self.selection_que ) ) )
+        
+        log.info( "Selected: {}".format( report ) )
+        
     # Action CBs
     def _newFileCB( self ):
         self.textEdit.setText("")
@@ -637,7 +663,7 @@ class QMain( QtWidgets.QMainWindow ):
         self.addDockWidget( QtCore.Qt.LeftDockWidgetArea, outliner )
 
         # setup the attribute editor = TODO: This better
-        cam = Camera("anon")
+        cam = Camera("anon", -1)
         mesh = Mesh()
         atribs = QDockingAttrs( self )
         self.selection_observers.append( atribs )
