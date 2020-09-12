@@ -455,6 +455,126 @@ class QDockingLog( QtWidgets.QDockWidget ):
         logging.getLogger().addHandler( self.log_widget )
 
 
+class QDockingCamActivityMon( QtWidgets.QDockWidget ):
+
+    SQUARES = [ x ** 2 for x in range( 9 ) ]
+
+
+    class QCamButton( QtWidgets.QWidget ):
+        CHIP = QtCore.QRect( 12, 4, 24, 24 )
+        BUT_SIZE = QtCore.QSize( 48, 48 )
+        BUT_RECT = QtCore.QRect( 0, 0, 48, 48 )
+
+        FONT = QtGui.QFont( "Arial", 12 )
+        FONT.setWeight( 70 )
+
+        PEN_GREY = QtGui.QPen()
+        PEN_GREY.setColor( QtGui.QColor( "grey" ) )
+
+        PEN_WHITE = QtGui.QPen()
+        PEN_WHITE.setColor( QtGui.QColor( "white" ) )
+
+        CHIP_PATH = QtGui.QPainterPath()
+        CHIP_PATH.addRoundedRect( CHIP, 2, 2 )
+
+        OUT_PATH = QtGui.QPainterPath()
+        OUT_PATH.addRoundedRect( BUT_RECT, 4, 4 )
+
+        SEL_PATH = QtGui.QPainterPath()
+        SEL_PATH.addRect( BUT_RECT )
+
+        COL_OK = QtGui.QColor( "green" )
+        COL_WARN = QtGui.QColor( "red" )
+
+        COL_BG = QtGui.QColor( "black" )
+        COL_SEL = QtGui.QColor( "white" )
+
+        MODE_NONE = 0
+        MODE_SOME = 1
+        MODE_MANY = 2
+
+        def __init__( self, parent, cam_id ):
+            super( QDockingCamActivityMon.QCamButton, self ).__init__( parent )
+
+            self.setSizePolicy( QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed )
+
+            self.cam_id = cam_id
+            self.text = str( self.cam_id )
+            self.selected = False
+            self.mode = self.MODE_NONE
+
+        def sizeHint( self ):
+            return self.BUT_SIZE
+
+        def paintEvent( self, e ):
+            painter = QtGui.QPainter( self )
+
+            painter.setPen( self.PEN_GREY )
+
+            painter.fillPath( self.OUT_PATH, self.COL_BG )
+            painter.drawPath( self.OUT_PATH )
+
+            if (self.mode > self.MODE_SOME):
+                if (self.mode == self.MODE_MANY):
+                    painter.fillPath( self.CHIP_PATH, self.COL_WARN )
+                else:
+                    painter.fillPath( self.CHIP_PATH, self.COL_OK )
+
+            painter.drawPath( self.CHIP_PATH )
+
+            painter.setPen( self.PEN_WHITE )
+            if (self.text):
+                painter.setFont( self.FONT )
+                painter.drawText( self.BUT_RECT, QtCore.Qt.AlignCenter | QtCore.Qt.AlignBottom, self.text )
+
+            if (self.selected):
+                painter.drawPath( self.SEL_PATH )
+
+
+    def __init__( self, parent ):
+        super( QDockingCamActivityMon, self ).__init__( "CamActivityMon", parent )
+        self.setObjectName( "CamMonDockWidget" )
+        self.setAllowedAreas( QtCore.Qt.LeftDockWidgetArea |
+                              QtCore.Qt.RightDockWidgetArea )
+
+        self.roid_overload_limit = 100
+        self.canvas = QtWidgets.QWidget( self )
+        self.layout = QtWidgets.QHBoxLayout( self.canvas )
+
+        self._populate()
+        self.setWidget( self.canvas )
+
+    def _populate( self ):
+        for i in range( 6 ):
+            button = QDockingCamActivityMon.QCamButton( self.canvas, i )
+            self.layout.addWidget( button )
+            if (i == 4):
+                button.selected = True
+            button.mode = i - 1
+
+    @staticmethod
+    def genDimsSquare( num_cams ):
+        """
+        Determine rows / cols needed to pack num_cams into to keep square
+
+        :param num_cams: (int) number of cameras to arrange
+        :return: (int,int) Rows, Cols
+        """
+        x = 0
+        while( QDockingCamActivityMon.SQUARES[ x ] < num_cams ):
+            x += 1
+
+        if (x > 0):
+            y, r = divmod( num_cams, x )
+        else:
+            y, r = 0, 0
+
+        if (r > 0):
+            y += 1
+
+        return (x, y)
+
+
 class QDockingRegions( QtWidgets.QDockWidget ):
 
     def __init__( self, parent ):
@@ -671,8 +791,13 @@ class QMain( QtWidgets.QMainWindow ):
         atribs.addSelectable( mesh )
         self.addDockWidget( QtCore.Qt.LeftDockWidgetArea, atribs )
 
+        # Region tool
         regions = QDockingRegions( self )
         self.addDockWidget( QtCore.Qt.RightDockWidgetArea, regions )
+
+        # activity monitor
+        action = QDockingCamActivityMon( self )
+        self.addDockWidget( QtCore.Qt.RightDockWidgetArea, action )
 
         # setup status bar
         self._buildStatusBar()
