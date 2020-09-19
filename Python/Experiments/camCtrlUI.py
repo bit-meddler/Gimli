@@ -459,76 +459,95 @@ class QDockingCamActivityMon( QtWidgets.QDockWidget ):
 
     SQUARES = [ x ** 2 for x in range( 9 ) ]
 
+    class QCamButSettings( object ):
+
+        def __init__( self ):
+            self.BUT_SIZE = QtCore.QSize( 48, 48 )
+
+            self.HIGH_RECT = QtCore.QRect( 1, 1, 46, 46 ) # sz -1 px
+            self.BUT_RECT = QtCore.QRect( 3, 3, 41, 41 ) # sz - 3 px
+            self.CHIP = QtCore.QRect( 13, 6, 20, 20 ) # 20x20 centred in BUT_RECT
+
+            self.FONT = QtGui.QFont( "Arial", 12 )
+            self.FONT.setWeight( 60 )
+
+            self.PEN_GREY = QtGui.QPen()
+            self.PEN_GREY.setColor( QtGui.QColor( 134, 132, 130 ) )
+            self.PEN_GREY.setWidth( 1 )
+            self.PEN_GREY.setStyle( QtCore.Qt.SolidLine )
+            self.PEN_GREY.setCapStyle( QtCore.Qt.RoundCap )
+            self.PEN_GREY.setJoinStyle( QtCore.Qt.RoundJoin )
+
+            self.GRAD_GRAY = QtGui.QLinearGradient( 0, 0, 0, 38 )
+            self.GRAD_GRAY.setColorAt( 0.000, QtGui.QColor( 134, 132, 130,  0 ) )
+            self.GRAD_GRAY.setColorAt( 0.666, QtGui.QColor( 134, 132, 130, 32 ) )
+            self.GRAD_GRAY.setColorAt( 1.000, QtGui.QColor( 134, 132, 130, 64 ) )
+
+            self.PEN_WHITE = QtGui.QPen()
+            self.PEN_WHITE.setColor( QtGui.QColor( "white" ) )
+            self.PEN_WHITE.setWidthF( 1.5 )
+            self.PEN_WHITE.setStyle( QtCore.Qt.SolidLine )
+            self.PEN_WHITE.setCapStyle( QtCore.Qt.RoundCap )
+            self.PEN_WHITE.setJoinStyle( QtCore.Qt.RoundJoin )
+
+            self.CHIP_PATH = QtGui.QPainterPath()
+            self.CHIP_PATH.addRoundedRect( self.CHIP, 2, 2 )
+
+            self.OUT_PATH = QtGui.QPainterPath()
+            self.OUT_PATH.addRoundedRect( self.BUT_RECT, 2, 2 )
+
+            self.SEL_PATH = QtGui.QPainterPath()
+            self.SEL_PATH.addRect( self.HIGH_RECT )
+
+            self.COL_OK   = QtGui.QColor( "green" )
+            self.COL_WARN = QtGui.QColor( "red" )
+
+            self.COL_BG  = QtGui.QColor( "black" )
+            self.COL_SEL = QtGui.QColor( "white" )
+
+            self.roid_overload_limit = 5
+
 
     class QCamButton( QtWidgets.QWidget ):
-        CHIP = QtCore.QRect( 12, 4, 24, 24 )
-        BUT_SIZE = QtCore.QSize( 48, 48 )
-        BUT_RECT = QtCore.QRect( 0, 0, 48, 48 )
 
-        FONT = QtGui.QFont( "Arial", 12 )
-        FONT.setWeight( 70 )
-
-        PEN_GREY = QtGui.QPen()
-        PEN_GREY.setColor( QtGui.QColor( "grey" ) )
-
-        PEN_WHITE = QtGui.QPen()
-        PEN_WHITE.setColor( QtGui.QColor( "white" ) )
-
-        CHIP_PATH = QtGui.QPainterPath()
-        CHIP_PATH.addRoundedRect( CHIP, 2, 2 )
-
-        OUT_PATH = QtGui.QPainterPath()
-        OUT_PATH.addRoundedRect( BUT_RECT, 4, 4 )
-
-        SEL_PATH = QtGui.QPainterPath()
-        SEL_PATH.addRect( BUT_RECT )
-
-        COL_OK = QtGui.QColor( "green" )
-        COL_WARN = QtGui.QColor( "red" )
-
-        COL_BG = QtGui.QColor( "black" )
-        COL_SEL = QtGui.QColor( "white" )
-
-        MODE_NONE = 0
-        MODE_SOME = 1
-        MODE_MANY = 2
-
-        def __init__( self, parent, cam_id ):
+        def __init__( self, parent, settings, cam_id ):
             super( QDockingCamActivityMon.QCamButton, self ).__init__( parent )
 
             self.setSizePolicy( QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed )
 
             self.cam_id = cam_id
+            self.settings = settings
             self.text = str( self.cam_id )
             self.selected = False
-            self.mode = self.MODE_NONE
+            self.roid_count = 0
 
         def sizeHint( self ):
-            return self.BUT_SIZE
+            return self.settings.BUT_SIZE
 
         def paintEvent( self, e ):
             painter = QtGui.QPainter( self )
 
-            painter.setPen( self.PEN_GREY )
+            painter.setPen( self.settings.PEN_GREY )
 
-            painter.fillPath( self.OUT_PATH, self.COL_BG )
-            painter.drawPath( self.OUT_PATH )
+            painter.setBrush( self.settings.GRAD_GRAY )
+            painter.drawPath( self.settings.OUT_PATH )
+            painter.setBrush( QtCore.Qt.NoBrush )
 
-            if (self.mode > self.MODE_SOME):
-                if (self.mode == self.MODE_MANY):
-                    painter.fillPath( self.CHIP_PATH, self.COL_WARN )
+            if( self.roid_count > 0 ):
+                if (self.roid_count >= self.settings.roid_overload_limit):
+                    painter.fillPath( self.settings.CHIP_PATH, self.settings.COL_WARN )
                 else:
-                    painter.fillPath( self.CHIP_PATH, self.COL_OK )
+                    painter.fillPath( self.settings.CHIP_PATH, self.settings.COL_OK )
 
-            painter.drawPath( self.CHIP_PATH )
+            painter.drawPath( self.settings.CHIP_PATH )
 
-            painter.setPen( self.PEN_WHITE )
+            painter.setPen( self.settings.PEN_WHITE )
             if (self.text):
-                painter.setFont( self.FONT )
-                painter.drawText( self.BUT_RECT, QtCore.Qt.AlignCenter | QtCore.Qt.AlignBottom, self.text )
+                painter.setFont( self.settings.FONT )
+                painter.drawText( self.settings.BUT_RECT, QtCore.Qt.AlignCenter | QtCore.Qt.AlignBottom, self.text )
 
             if (self.selected):
-                painter.drawPath( self.SEL_PATH )
+                painter.drawPath( self.settings.SEL_PATH )
 
 
     def __init__( self, parent ):
@@ -537,20 +556,20 @@ class QDockingCamActivityMon( QtWidgets.QDockWidget ):
         self.setAllowedAreas( QtCore.Qt.LeftDockWidgetArea |
                               QtCore.Qt.RightDockWidgetArea )
 
-        self.roid_overload_limit = 100
         self.canvas = QtWidgets.QWidget( self )
         self.layout = QtWidgets.QHBoxLayout( self.canvas )
+        self.settings = QDockingCamActivityMon.QCamButSettings()
 
         self._populate()
         self.setWidget( self.canvas )
 
     def _populate( self ):
         for i in range( 6 ):
-            button = QDockingCamActivityMon.QCamButton( self.canvas, i )
+            button = QDockingCamActivityMon.QCamButton( self.canvas, self.settings, i )
             self.layout.addWidget( button )
             if (i == 4):
                 button.selected = True
-            button.mode = i - 1
+            button.roid_count = i
 
     @staticmethod
     def genDimsSquare( num_cams ):
