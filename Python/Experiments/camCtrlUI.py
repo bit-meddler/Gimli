@@ -455,6 +455,145 @@ class QDockingLog( QtWidgets.QDockWidget ):
         logging.getLogger().addHandler( self.log_widget )
 
 
+class QFlowLayout( QtWidgets.QLayout ):
+    """
+        Centered 'Flow' Layout based on this Qt Example:
+            https://doc.qt.io/archives/qt-4.8/qt-layouts-flowlayout-example.html
+
+    """
+    def __init__( self, parent=None, margin=-1, hspacing=-1, vspacing=-1 ):
+        super( QFlowLayout, self ).__init__( parent )
+        self._hspacing = hspacing
+        self._vspacing = vspacing
+        self._items = [ ]
+        self.setContentsMargins( margin, margin, margin, margin )
+
+    def __del__( self ):
+        del self._items[ : ]
+
+    def addItem( self, item ):
+        self._items.append( item )
+
+    def horizontalSpacing( self ):
+        if self._hspacing >= 0:
+            return self._hspacing
+        else:
+            return self.smartSpacing(
+                QtWidgets.QStyle.PM_LayoutHorizontalSpacing )
+
+    def verticalSpacing( self ):
+        if self._vspacing >= 0:
+            return self._vspacing
+        else:
+            return self.smartSpacing(
+                QtWidgets.QStyle.PM_LayoutVerticalSpacing )
+
+    def count( self ):
+        return len( self._items )
+
+    def itemAt( self, index ):
+        if 0 <= index < len( self._items ):
+            return self._items[ index ]
+
+    def takeAt( self, index ):
+        if 0 <= index < len( self._items ):
+            return self._items.pop( index )
+
+    def expandingDirections( self ):
+        return QtCore.Qt.Orientations( 0 )
+
+    def hasHeightForWidth( self ):
+        return True
+
+    def heightForWidth( self, width ):
+        return self.doLayout( QtCore.QRect( 0, 0, width, 0 ), True )
+
+    def setGeometry( self, rect ):
+        super( QFlowLayout, self ).setGeometry( rect )
+        self.doLayout( rect, False )
+
+    def sizeHint( self ):
+        return self.minimumSize()
+
+    def minimumSize( self ):
+        size = QtCore.QSize()
+        for item in self._items:
+            size = size.expandedTo( item.minimumSize() )
+        left, top, right, bottom = self.getContentsMargins()
+        size += QtCore.QSize( left + right, top + bottom )
+        return size
+
+    def doLayout( self, rect, testonly ):
+        left, top, right, bottom = self.getContentsMargins()
+        effective = rect.adjusted( +left, +top, -right, -bottom )
+
+        x = e_x = effective.x()
+        y = effective.y()
+        right = effective.right()
+
+        hspace = self.horizontalSpacing()
+        vspace = self.verticalSpacing()
+
+        lineheight = 0
+        widget_pos = [ [ ] ]
+        curr_row = 0
+        for item in self._items:
+            widget = item.widget()
+
+            if (hspace == -1):
+                hspace = widget.style().layoutSpacing(
+                    QtWidgets.QSizePolicy.PushButton,
+                    QtWidgets.QSizePolicy.PushButton, QtCore.Qt.Horizontal )
+
+            if (vspace == -1):
+                vspace = widget.style().layoutSpacing(
+                    QtWidgets.QSizePolicy.PushButton,
+                    QtWidgets.QSizePolicy.PushButton, QtCore.Qt.Vertical )
+
+            width = item.sizeHint().width()
+            nextX = x + width + hspace
+
+            if (((nextX - hspace) > right) and (lineheight > 0)):
+                x = e_x
+                y = y + lineheight + vspace
+                nextX = x + width + hspace
+                lineheight = 0
+                widget_pos.append( [ ] )
+                curr_row += 1
+
+            widget_pos[ curr_row ].append( (x, y, nextX) )
+
+            x = nextX
+            lineheight = max( lineheight, item.sizeHint().height() )
+
+        if not testonly:
+            # recompute each row's x to centre the row
+            flat_pos = [ ]
+            for row in widget_pos:
+                data = row[ -1 ]
+                if (len( data ) < 3):
+                    continue
+
+                extra_pad = (right - (data[ 2 ] - hspace)) // 2
+                for x, y, _ in row:
+                    flat_pos.append( (x + extra_pad, y) )
+
+            # apply to widgets
+            for item, (x, y) in zip( self._items, flat_pos ):
+                item.setGeometry( QtCore.QRect( QtCore.QPoint( x, y ), item.sizeHint() ) )
+
+        return y + lineheight - rect.y() + bottom
+
+    def smartSpacing( self, pm ):
+        parent = self.parent()
+        if parent is None:
+            return -1
+        elif parent.isWidgetType():
+            return parent.style().pixelMetric( pm, None, parent )
+        else:
+            return parent.spacing()
+
+
 class QDockingCamActivityMon( QtWidgets.QDockWidget ):
 
     SQUARES = [ x ** 2 for x in range( 9 ) ]
@@ -466,7 +605,7 @@ class QDockingCamActivityMon( QtWidgets.QDockWidget ):
 
             self.HIGH_RECT = QtCore.QRect( 1, 1, 46, 46 ) # sz -1 px
             self.BUT_RECT = QtCore.QRect( 3, 3, 41, 41 ) # sz - 3 px
-            self.CHIP = QtCore.QRect( 13, 6, 20, 20 ) # 20x20 centred in BUT_RECT
+            self.CHIP = QtCore.QRect( 14, 7, 18, 18 ) # 20x20 centred in BUT_RECT
 
             self.FONT = QtGui.QFont( "Arial", 12 )
             self.FONT.setWeight( 60 )
@@ -556,17 +695,32 @@ class QDockingCamActivityMon( QtWidgets.QDockWidget ):
         self.setAllowedAreas( QtCore.Qt.LeftDockWidgetArea |
                               QtCore.Qt.RightDockWidgetArea )
 
-        self.canvas = QtWidgets.QWidget( self )
-        self.layout = QtWidgets.QHBoxLayout( self.canvas )
         self.settings = QDockingCamActivityMon.QCamButSettings()
 
+        self.scroll_area = QtWidgets.QScrollArea( self )
+        self.scroll_area.setWidgetResizable( True )
+        hz = self.scroll_area.horizontalScrollBar()
+        hz.setEnabled( False )
+        self.scroll_area.setHorizontalScrollBarPolicy( QtCore.Qt.ScrollBarAlwaysOff )
+
+        self.canvas = QtWidgets.QWidget( self.scroll_area )
+        self.canvas.setMinimumWidth( 150 )
+
+        self.layout = QFlowLayout( self.canvas )
+
         self._populate()
-        self.setWidget( self.canvas )
+
+        self.scroll_area.setWidget( self.canvas )
+        self.setWidget( self.scroll_area )
+
+    def addCam( self, cam_id ):
+        button = QDockingCamActivityMon.QCamButton( self.canvas, self.settings, cam_id )
+        self.layout.addWidget( button )
+        return button
 
     def _populate( self ):
-        for i in range( 6 ):
-            button = QDockingCamActivityMon.QCamButton( self.canvas, self.settings, i )
-            self.layout.addWidget( button )
+        for i in range( 24 ):
+            button = self.addCam( i )
             if (i == 4):
                 button.selected = True
             button.roid_count = i
@@ -693,6 +847,7 @@ class QMain( QtWidgets.QMainWindow ):
         self._actions = {}
 
         # Arbiter Comms channels
+        # TODO: Test if Arbiter is running, spawn one if needed
         self.command = ArbiterControl()
 
         self._buildUI()
