@@ -691,7 +691,7 @@ CAMERA_REQUESTS_REV = { v:k for k,v in CAMERA_REQUESTS.items() }
 
 CAM_EXE_PARAMS = (sorted( CAMERA_COMMANDS.keys() ))
 CAM_REQ_PARAMS = (sorted( CAMERA_REQUESTS.keys() ))
-CAM_SET_PARAMS = (sorted( CAMERA_CAPABILITIES.keys() ))
+CAM_SET_PARAMS = (sorted( TRAIT_LOCATIONS.keys() ))
 
 # Sync Config Data -------------------------------------------------------------
 SYNC_CAPABILITIES = {
@@ -865,7 +865,10 @@ SYNC_REQUESTS = {
 SYNC_COMMANDS_REV = { v:k for k,v in SYNC_COMMANDS.items() }
 SYNC_REQUESTS_REV = { v:k for k,v in SYNC_REQUESTS.items() }
 
+SYNC_EXE_PARAMS = (sorted( SYNC_COMMANDS.keys() ))
 SYNC_SET_PARAMS = (sorted( SYNC_LOCATIONS.keys() ))
+
+ALL_SET_PARAMS  = set( SYNC_SET_PARAMS ).union( set( CAM_SET_PARAMS ) )
 
 # Universal Commands -----------------------------------------------------------
 CHAR_COMMAND_VAL  = ord( b"*" ) # (BB) unit8
@@ -917,18 +920,27 @@ def composeCommand( command_name, value ):
     cmd_str = b""
     payload = b""
 
-    # Exe command
-    if (command_name in CAM_EXE_PARAMS):
+    # Exe command Cam
+    if( command_name in CAM_EXE_PARAMS ):
         cmd_str = CAMERA_COMMANDS[ command_name ]
 
-    # Req command
-    if (command_name in CAM_REQ_PARAMS):
+    # Exe command Sync
+    elif( command_name in SYNC_EXE_PARAMS ):
+        cmd_str = SYNC_COMMANDS[ command_name ]
+
+    # Req command - works for both camera & sync
+    elif( command_name in CAM_REQ_PARAMS ):
         cmd_str = CAMERA_REQUESTS[ command_name ]
 
-    # Set commands are a bit harder...
-    if (command_name in CAM_SET_PARAMS):
+    # Set commands
+    elif( command_name in ALL_SET_PARAMS ):
+        trait = (None, None, None)
+        if( command_name in CAM_SET_PARAMS ):
+            trait = TRAIT_LOCATIONS[ command_name ]
+        else:
+            trait = SYNC_LOCATIONS[ command_name ]
 
-        reg, size, in_regshi = TRAIT_LOCATIONS[ command_name ]
+        reg, size, in_regshi = trait
 
         if (size == 1):
             payload = struct.pack( ">BB", reg, value )
@@ -938,8 +950,22 @@ def composeCommand( command_name, value ):
             payload = struct.pack( ">Hh", reg, value )
             cmd_str = b"~"
 
+        if( size == 4 ):
+            payload = struct.pack( ">Bf", reg, value )
+            cmd_str = b"!"
+
     return (cmd_str + payload, in_regshi)
 # composeCommand( command_name, value )
+
+def macroSyncSetup( framerate, multiplier=1, divisor=1 ):
+    command_list = [
+        composeCommand( "sync_out", 0 )[0],
+        composeCommand( "sync_multi", multiplier )[0],
+        composeCommand( "sync_divisor", divisor )[0],
+        composeCommand( "framerate", float( framerate ) )[0],
+        composeCommand( "sync_out", 1 )[0],
+    ]
+    return command_list
 
 def encodePacket( frm_cnt, num_dts, compression, dtype, sml_cnt, time_stamp, dgm_no, dgm_cnt, data, img_os=None, img_sz=None ):
     """

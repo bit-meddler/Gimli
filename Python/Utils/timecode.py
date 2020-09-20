@@ -20,7 +20,7 @@ class SimpleTimecode( object ):
         return ( hours, mins, secs, frames, subs )
 
     def toString( self ):
-        return "{}:{}:{}:{}.({})".format( *self.toInts() )
+        return "{:02}:{:02}:{:02}:{:02}.({})".format( *self.toInts() )
 
     def toBCDlist( self ):
         return self.toInts()[:-1]

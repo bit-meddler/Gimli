@@ -22,6 +22,15 @@
 import os, sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
+# Logging
+import logging
+logging.basicConfig()
+log = logging.getLogger( __name__ )
+log.setLevel( logging.DEBUG )
+
+#detailed_log = logging.Formatter( "%(asctime)s.%(msecs)04d [%(levelname)-8s][%(name)-16s] %(message)s {%(filename)s@%(lineno)s}", "%y%m%d %H:%M:%S" )
+#terse_log = logging.Formatter( "%(asctime)s.%(msecs)04d [%(levelname)-8s] %(message)s", "%y%m%d %H:%M:%S" )
+
 import numpy as np
 np.set_printoptions( precision=3, suppress=True )
 
@@ -89,10 +98,14 @@ class Arbiter( object ):
             if( ip is None ):
                 print("Unknown Cam id")
                 continue
+            msg = ""
             if( setting ):
-                self.com_mgr.q_cmds.put( "{}:set {} {}".format( ip, noun, dgm[ 4 ] ) )
+                msg = "{}:set {} {}".format( ip, noun, dgm[ 4 ] )
+                self.com_mgr.q_cmds.put( msg )
             else: #get exe
-                self.com_mgr.q_cmds.put( "{}:{} {}".format( ip, verb, noun ) )
+                msg = "{}:{} {}".format( ip, verb, noun )
+                self.com_mgr.q_cmds.put( msg )
+            log.info( "hCNC> " + msg )
 
     def execute( self ):
         # Start Services
@@ -136,6 +149,7 @@ class Arbiter( object ):
                                         bytes( str( time ), "utf-8" ),
                                         strides.tobytes(),
                                         dets.tobytes() ] )
+        log.info( "sent dets" )
 
     def cleanClose( self ):
         print( self.system )

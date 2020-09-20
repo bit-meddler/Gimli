@@ -41,6 +41,13 @@ class CameraTraits( object ):
         """ Basic Validation, override for special cases """
         return ( (candidate <= self.max) and (candidate >= self.min) )
 
+import logging
+logging.basicConfig()
+log = logging.getLogger( __name__ )
+log.setLevel( logging.DEBUG )
+
+#detailed_log = logging.Formatter( "%(asctime)s.%(msecs)04d [%(levelname)-8s][%(name)-16s] %(message)s {%(filename)s@%(lineno)s}", "%y%m%d %H:%M:%S" )
+#terse_log = logging.Formatter( "%(asctime)s.%(msecs)04d [%(levelname)-8s] %(message)s", "%y%m%d %H:%M:%S" )
 
 class SysManager( object ):
     """
@@ -96,6 +103,9 @@ class SysManager( object ):
         if( timestamp is not None ):
             self.last_dgm[ cam_id ] = timestamp
 
+        if( state_changed ):
+            log.info( "Setting CamID for '{}' to '{}'".format( cam_ip, cam_id ) )
+            
         return (cam_id, state_changed)
 
     def getCamIP( self, cam_id ):
