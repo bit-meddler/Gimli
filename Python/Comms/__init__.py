@@ -9,8 +9,9 @@ That is why C&C is done in a "Platonic Language" that is not related to implemen
 We will also define the Arbiter's C&C Language which would be used by multipule clients without underlying knowlage of
 camera hardware and implementation details.
 """
-
+import numpy as np
 import struct
+import threading
 import zmq
 
 
@@ -231,5 +232,47 @@ class ArbiterControl( object ):
         self._zctx.term()
 
 
+class ArbiterListen( threading.Thread ):
+
+    def __init__( self, out_q, func ):
+        # Thread setup
+        super( ArbiterListen, self ).__init__()
+        self.daemon = True
+
+        # setup ZMQ
+        self._zctx = zmq.Context()
+
+        self.dets_recv = self._zctx.socket( zmq.SUB )
+        self.dets_recv.subscribe( ABT_TOPIC_ROIDS )
+        self.dets_recv.connect( "tcp://localhost:{}".format( ABT_PORT_DATA ) )
+
+        self.poller = zmq.Poller()
+        self.poller.register( self.dets_recv, zmq.POLLIN )
+
+        # output Queue
+        self._q = out_q
+        self._func = func
+
+        # Thread Control
+        self.running = threading.Event()
+        self.running.set()
 
 
+    def run( self ):
+        # Core Thread
+        while( self.running.isSet() ):
+            # look for packets
+            coms = dict( self.poller.poll( 0 ) )
+            if (coms.get( self.dets_recv ) == zmq.POLLIN):
+                topic, _, time, strides, data = self.dets_recv.recv_multipart()
+                # pass to the callbacks
+                nd_strides = np.frombuffer( strides, dtype=np.int32 )
+                nd_data = np.frombuffer( data, dtype=np.float32 ).reshape( -1, 3 )
+                self._q.put( (time, nd_strides, nd_data) )
+
+        # while
+        self.cleanClose()
+
+    def cleanClose( self ):
+        self.dets_recv.close()
+        self._zctx.term()

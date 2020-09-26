@@ -24,15 +24,36 @@ log.setLevel( logging.DEBUG )
 #detailed_log = logging.Formatter( "%(asctime)s.%(msecs)04d [%(levelname)-8s][%(name)-16s] %(message)s {%(filename)s@%(lineno)s}", "%y%m%d %H:%M:%S" )
 #terse_log = logging.Formatter( "%(asctime)s.%(msecs)04d [%(levelname)-8s] %(message)s", "%y%m%d %H:%M:%S" )
 
+import argparse
 import numpy as np
 np.set_printoptions( precision=3, suppress=True )
+import pickle
 from queue import SimpleQueue
 import struct
 import threading
+import time
 import zmq
 
 import Comms
 #from Comms.piComunicate import AssembleDetFrame, SimpleComms
+
+class Metronome( threading.Thread ):
+    """ This looks familiar! """
+
+    def __init__( self, the_flag, delay ):
+        super( Metronome, self ).__init__()
+        self._flag = the_flag
+        self._delay = delay
+        self.running = threading.Event()
+        self.running.set()
+
+    def run( self ):
+        while self.running.isSet():
+            time.sleep( self._delay )
+            self._flag.set()
+
+    def stop( self ):
+        self.running.clear()
 
 
 class Arbiter( object ):
@@ -47,7 +68,6 @@ class Arbiter( object ):
         self.system = Comms.SysManager()
 
         # No actual system communications, hold the det/com mans queues yourself
-        self.q_out  = SimpleQueue()
         self.q_misc = SimpleQueue()
 
         # Client Communications (ZMQ)
@@ -80,9 +100,23 @@ class Arbiter( object ):
             "Cam9" : "192.168.10.109",
             "CamA" : "192.168.10.110",
         }
+        cam_list = [ c for c in _BOGO_SYS_.keys() if c.startswith("C") ]
+        for cam in cam_list:
+            self.system.manualAdd( cam )
 
         # a clock thread to tick the data replay
         self.ticks = 0
+
+        # setup replay
+        self.cur_frame = 0
+        self.frames = []
+        self.splits = []
+        self.num_frames = 0
+        self._setupReplay()
+
+        self.tick = threading.Event()
+        self.tick.clear()
+        self.timer = Metronome( self.tick, 1.0 / self.rate )
 
         # Enable Running
         self.running = threading.Event()
@@ -90,10 +124,24 @@ class Arbiter( object ):
 
     def _setupReplay( self ):
         # load up the replay files
-        # add a radius col
-        # pack to frames
-        pass
-    
+        cams = []
+        for i in range( 10 ):
+            replay_pkl_fq = os.path.join( DATA_PATH, self.replay + ".a2d_cam{:0>2}.pik".format( i ) )
+            with open( replay_pkl_fq, "rb" ) as fh:
+                cams.append( pickle.load( fh ) )
+
+        # repack each frame
+        self.num_frames = len( cams[0] )
+        for i in range( self.num_frames ):
+            frame = []
+            split = [0]
+            for j in range( 10 ):
+                cam_frame = [ [x, y, 1.5] for x, y in cams[j][i] ] # add a radius col
+                frame.extend( cam_frame )
+                split.append( split[-1] + len(cam_frame) )
+            self.frames.append( np.array( frame, dtype=np.float32 ) )
+            self.splits.append( np.array( split, dtype=np.int ) )
+
     def handleCNC( self, dgm ):
         # currently just cameras
         verb = dgm[ 2 ]
@@ -121,9 +169,11 @@ class Arbiter( object ):
             else:
                 msg = "{}:{} {}".format( ip, verb, noun )
             log.info( "hCNC> " + msg )
+        # Simulate the result of this??
 
     def execute( self ):
         # Start Services
+        self.timer.start()
 
         # run
         while( self.running.isSet() ):
@@ -142,11 +192,14 @@ class Arbiter( object ):
                     # Emit a pub saying msg 'ack' has been done.
                     self.data_pub.send_multipart( [ Comms.ABT_TOPIC_STATE_B, b"", b"DID", ack ] )
 
-                # Check for Dets or Images to send out
-                # TODO: In the future, merge frames from different families of cameras
-                if( not self.q_out.empty() ):
-                    data = self.q_out.get()
+                # Send some data
+                if( self.tick.isSet() ):
+                    data = [ self.cur_frame, self.splits[self.cur_frame], self.frames[self.cur_frame] ]
                     self.publishDets( data ) # Make this a callback in the det man?
+                    self.cur_frame += self.step
+                    if( self.cur_frame > self.num_frames ):
+                        self.cur_frame = 0
+                    self.tick.clear()
 
                 # Look for misc & Orphans from cameraComms
                 while( not self.q_misc.empty() ):
@@ -168,14 +221,10 @@ class Arbiter( object ):
                                         bytes( str( time ), "utf-8" ),
                                         strides.tobytes(),
                                         dets.tobytes() ] )
-        log.info( "sent dets" )
+        #log.info( "sent dets" )
 
     def cleanClose( self ):
         print( self.system )
-        # Close managers
-        self.com_mgr.running.clear()
-        self.det_mgr.running.clear()
-
         # Close sockets for graceful shutdown
         self.cnc_in.close()
         self.state_pub.close()

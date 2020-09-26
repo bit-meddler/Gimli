@@ -13,6 +13,14 @@ A dimentionality reduction of the tracking model both reduces the IK solver's wo
 
 The core tennet is so simple, it's laughable.  We are tracking something, with a volume, which has markers attached.  We cannot see through the volume.  Any camera viewing the scene with a trackable object needs to ascribe an identity to any detection it sees.  Detections could be 'true' (from a marker), or 'false' (from water bottles, lights, shiny stuff in the scene).  Labelling, and then solving the skeleton's pose to satisy, 2D views means all captured data is used to solve the skeleton.  "Tradional" MoCap systems depend on solving to labeled 3D reconstructions, and totally ignore the posing of the model, the ability of the model to acelerate between frames to satisfy proposed solutions, the fact a trackedobject is solid, Single ray data.
 
+## Installing
+We are running on Python 3, currently developing on 
+3.7.2.  To get the dependancies, you should be able to 
+<pip install -r Requirements.txt>
+
+As the project develops Core functions will make their 
+way into rust or C++.  we'll cross that bridge later.
+
 ## The Plan
 Errrrrrrr. First collect some data.
 1. collect data

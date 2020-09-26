@@ -6,8 +6,11 @@
 """
 from functools import partial
 import logging
+import numpy as np
 from PySide2 import QtCore, QtGui, QtWidgets, QtOpenGL
+from queue import SimpleQueue
 from OpenGL import GL, GLU, GLUT 
+import zmq
 
 import sys, os
 _git_root_ = os.path.dirname( os.path.dirname( os.path.dirname( os.path.dirname( os.path.realpath(__file__) ) ) ) )
@@ -21,7 +24,7 @@ log.setLevel( logging.DEBUG )
 detailed_log = logging.Formatter( "%(asctime)s.%(msecs)04d [%(levelname)-8s][%(name)-16s] %(message)s {%(filename)s@%(lineno)s}", "%y%m%d %H:%M:%S" )
 terse_log = logging.Formatter( "%(asctime)s.%(msecs)04d [%(levelname)-8s] %(message)s", "%y%m%d %H:%M:%S" )
 
-from Comms import ArbiterControl
+import Comms
 
 # Look and Feel Helpers
 def _getStdIcon( icon_enum ):
@@ -652,7 +655,7 @@ class QDockingCamActivityMon( QtWidgets.QDockWidget ):
             self.COL_BG  = QtGui.QColor( "black" )
             self.COL_SEL = QtGui.QColor( "white" )
 
-            self.roid_overload_limit = 5
+            self.roid_overload_limit = 150 # this needs to be on a Knob
 
 
     class QCamButton( QtWidgets.QWidget ):
@@ -716,6 +719,10 @@ class QDockingCamActivityMon( QtWidgets.QDockWidget ):
 
         self.layout = QFlowLayout( self.canvas )
 
+        # change we we get proper MVC
+        self.cam_count = 0
+        self.roid_count_list = []
+        self.cam_list = []
         self._populate()
 
         self.scroll_area.setWidget( self.canvas )
@@ -724,14 +731,21 @@ class QDockingCamActivityMon( QtWidgets.QDockWidget ):
     def addCam( self, cam_id ):
         button = QDockingCamActivityMon.QCamButton( self.canvas, self.settings, cam_id )
         self.layout.addWidget( button )
+        self.roid_count_list.append( 0 )
+        self.cam_list.append( button )
+        self.cam_count += 1
         return button
 
+    def updateRoidCount( self ):
+        for button, num in zip( self.cam_list, self.roid_count_list ):
+            button.roid_count = num
+            button.update()
+
     def _populate( self ):
-        for i in range( 24 ):
+        for i in range( 10 ):
             button = self.addCam( i )
             if (i == 4):
                 button.selected = True
-            button.roid_count = i
 
     @staticmethod
     def genDimsSquare( num_cams ):
@@ -837,7 +851,58 @@ class QDockingOutliner( QtWidgets.QDockWidget ):
 
 
 class QMain( QtWidgets.QMainWindow ):
-    
+
+    class ArbiterListen( QtCore.QThread ):
+
+        found = QtCore.Signal()
+
+        def __init__( self, out_q ):
+            # Thread setup
+            super( QMain.ArbiterListen, self ).__init__()
+
+            # recv monitor
+            self._frame_counter = QtCore.QElapsedTimer()
+            self._frame_counter.restart()
+            self.fps = 1
+
+            # setup ZMQ
+            self._zctx = zmq.Context()
+
+            self.dets_recv = self._zctx.socket( zmq.SUB )
+            self.dets_recv.subscribe( Comms.ABT_TOPIC_ROIDS )
+            self.dets_recv.connect( "tcp://localhost:{}".format( Comms.ABT_PORT_DATA ) )
+
+            self.poller = zmq.Poller()
+            self.poller.register( self.dets_recv, zmq.POLLIN )
+
+            # output Queue
+            self._q = out_q
+
+            # Thread Control
+            self.running = True
+
+        def run( self ):
+            # Core Thread
+            while( self.running ):
+                # look for packets
+                coms = dict( self.poller.poll( 0 ) )
+                if( coms.get( self.dets_recv ) == zmq.POLLIN ):
+                    topic, _, time, strides, data = self.dets_recv.recv_multipart()
+                    # pass to the callbacks
+                    nd_strides = np.frombuffer( strides, dtype=np.int32 )
+                    nd_data = np.frombuffer( data, dtype=np.float32 ).reshape( -1, 3 )
+                    self._q.put( (self.fps, time, nd_strides, nd_data) )
+                    self.found.emit()
+                    fps = 1000. / (float( self._frame_counter.restart() ) + 1e-6)
+                    if (fps > 150. or fps < 0.1):
+                        fps = self.fps
+                    self.fps = fps
+
+            # while
+            self.dets_recv.close()
+            self._zctx.term()
+
+
     def __init__( self, parent ):
         super( QMain, self ).__init__()
         self._app = parent
@@ -856,12 +921,32 @@ class QMain( QtWidgets.QMainWindow ):
 
         # Arbiter Comms channels
         # TODO: Test if Arbiter is running, spawn one if needed
-        self.command = ArbiterControl()
+        self.command = Comms.ArbiterControl()
+        self.dets_q = SimpleQueue()
+        self.dets_listen = QMain.ArbiterListen( self.dets_q )
+        self.dets_listen.found.connect( self.getNewFrame )
+
+        self.packet_count = 0
 
         self._buildUI()
         self.show()
         self.logNreport( "Launched", 5000 )
         log.info( "another" )
+
+        # start the det recever
+        self.dets_listen.start()
+
+    def getNewFrame( self ):
+        det_fps, time, strides, dets = self.dets_q.get()
+        self.packet_count += 1
+        num_cams = len( strides ) - 1
+        roid_count = [ 0 for _ in range( num_cams ) ]
+        for i in range( num_cams ):
+            roid_count[ i ] = strides[i+1] - strides[i]
+        self.cam_mon.roid_count_list = roid_count
+        self.cam_mon.updateRoidCount()
+        if( self.packet_count % 10 == 0 ):
+            log.info( "Got centroids @{:3.2f} fps: {}".format( det_fps, roid_count ) )
 
     def sendCNC( self, verb, noun, value=None ):
         tgt_list = list( map( lambda x: x.id, self.selection_que ) )
@@ -978,8 +1063,8 @@ class QMain( QtWidgets.QMainWindow ):
         self.addDockWidget( QtCore.Qt.RightDockWidgetArea, regions )
 
         # activity monitor
-        action = QDockingCamActivityMon( self )
-        self.addDockWidget( QtCore.Qt.RightDockWidgetArea, action )
+        self.cam_mon = QDockingCamActivityMon( self )
+        self.addDockWidget( QtCore.Qt.RightDockWidgetArea, self.cam_mon )
 
         # setup status bar
         self._buildStatusBar()
@@ -1018,7 +1103,7 @@ class QGLView( QtOpenGL.QGLWidget ):
     def paintGL(self):
         """ Draw the scene """
         fps = 1000./ (float( self._frame_counter.restart() ) + 1e-6)
-        if( fps > 120. or fps < 0.1):
+        if( fps > 150. or fps < 0.1):
             fps = self.fps
         self.fps = fps
         GL.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT)
