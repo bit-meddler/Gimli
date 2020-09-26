@@ -20,7 +20,10 @@
 
 # Workaround not being in PATH
 import os, sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+_git_root_ = os.path.dirname( os.path.dirname( os.path.dirname( os.path.dirname( os.path.realpath(__file__) ) ) ) )
+CODE_PATH = os.path.join( _git_root_, "midget", "Python" )
+DATA_PATH = os.path.join( _git_root_, "rpiCap", "exampleData" )
+sys.path.append( CODE_PATH )
 
 # Logging
 import logging

@@ -1,10 +1,18 @@
+""" camCtrlUI.py - experimental UI for controlling Camera settings
+
+    TODO: Ok this has gone far beyond an experiment, need to break down all the
+          inner classes into a mGUI module so they can be reused in future Apps
+
+"""
 from functools import partial
 import logging
 from PySide2 import QtCore, QtGui, QtWidgets, QtOpenGL
 from OpenGL import GL, GLU, GLUT 
 
 import sys, os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+_git_root_ = os.path.dirname( os.path.dirname( os.path.dirname( os.path.dirname( os.path.realpath(__file__) ) ) ) )
+CODE_PATH = os.path.join( _git_root_, "midget", "Python" )
+sys.path.append( CODE_PATH )
 
 logging.basicConfig()
 log = logging.getLogger( __name__ )
@@ -20,7 +28,7 @@ def _getStdIcon( icon_enum ):
     return QtGui.QIcon( QtWidgets.QApplication.style().standardIcon( icon_enum ) )
 
 class QDarkPalette( QtGui.QPalette ):
-    """ Dark palette for a Qt application meant to be used with the Fusion theme.
+    """ Dark palette for a Qt application, meant to be used with the Fusion theme.
         from Gist: https://gist.github.com/lschmierer/443b8e21ad93e2a2d7eb
     """
     WHITE     = QtGui.QColor( 255, 255, 255 )
