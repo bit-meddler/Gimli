@@ -14,7 +14,12 @@ A dimentionality reduction of the tracking model both reduces the IK solver's wo
 The core tennet is so simple, it's laughable.  We are tracking something, with a volume, which has markers attached.  We cannot see through the volume.  Any camera viewing the scene with a trackable object needs to ascribe an identity to any detection it sees.  Detections could be 'true' (from a marker), or 'false' (from water bottles, lights, shiny stuff in the scene).  Labelling, and then solving the skeleton's pose to satisy, 2D views means all captured data is used to solve the skeleton.  "Tradional" MoCap systems depend on solving to labeled 3D reconstructions, and totally ignore the posing of the model, the ability of the model to acelerate between frames to satisfy proposed solutions, the fact a trackedobject is solid, Single ray data.
 
 ## Installing
-We are running on Python 3, currently developing on 3.7.2.  To get the sources and possibly contribute, you'll need git.  Get git on Windows from https://gitforwindows.org/.  Pick an easy to find folder to put the git repos into, I've taken to using 'C:\code' as my usual repo.  `git clone https://github.com/bit-meddler/midget.git` in there.  To get the dependancies, you should be able to `pip install -r Requirements.txt` (make sure it's the right pip for the Python3 interpreter).
+We are running on Python 3, currently developing on 3.7.2.  To get the sources and possibly contribute, you'll need git.  Get git on Windows from https://gitforwindows.org/.  Pick an easy to find folder to put the git repos into, I've taken to using 'C:\code' as my usual repo.  `git clone https://github.com/bit-meddler/midget.git` and `git clone https://github.com/bit-meddler/rpiCap.git` in there.  To get the dependancies, you should be able to just `pip install -r Requirements.txt` (make sure it's the right pip for the Python3 interpreter).
+
+### First Run
+Just to prove it actually does something like a MoCap system, open a terminal/cmd window and cd into midget/Python/Apps, then run `python simArbiter.py` this will simulate a 10 camera MoCap system, and play back a wand wave at 25fps.  You can experiment with the arguments, add `-r 10 -k 1` to play back more slowly (10fps).
+
+With an Arbiter running, you can launch the camCtrlUI from midget/Python/Experiments.  This is getting most active development as to make a MoCap camera you need really good instrumentation to see if it's working, and to start thinking about a camera calibration routine you need to visualize a wand wave and see the results of wand detection.
 
 As the project develops Core functions will make their way into Rust or C++.  We'll cross that bridge later.
 
