@@ -16,7 +16,7 @@ The core tennet is so simple, it's laughable.  We are tracking something, with a
 ## Installing
 We are running on Python 3, currently developing on 
 3.7.2.  To get the dependancies, you should be able to 
-<pip install -r Requirements.txt>
+`pip install -r Requirements.txt`
 
 As the project develops Core functions will make their 
 way into rust or C++.  we'll cross that bridge later.
