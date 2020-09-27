@@ -62,7 +62,7 @@ class Arbiter( object ):
         # inits
         self.replay = replay or "calibration"
         self.rate = rate or 25
-        self.step = step or 4
+        self.step = step or 3
 
         # System State
         self.system = Comms.SysManager()
@@ -103,17 +103,18 @@ class Arbiter( object ):
         cam_list = [ c for c in _BOGO_SYS_.keys() if c.startswith("C") ]
         for cam in cam_list:
             self.system.manualAdd( cam )
+        self.system.remarshelCameras()
 
-        # a clock thread to tick the data replay
-        self.ticks = 0
 
         # setup replay
+        self.ticks = 0
         self.cur_frame = 0
         self.frames = []
         self.splits = []
         self.num_frames = 0
         self._setupReplay()
 
+        # a clock thread to tick the data replay
         self.tick = threading.Event()
         self.tick.clear()
         self.timer = Metronome( self.tick, 1.0 / self.rate )
@@ -139,8 +140,16 @@ class Arbiter( object ):
                 cam_frame = [ [x, y, 1.5] for x, y in cams[j][i] ] # add a radius col
                 frame.extend( cam_frame )
                 split.append( split[-1] + len(cam_frame) )
-            self.frames.append( np.array( frame, dtype=np.float32 ) )
-            self.splits.append( np.array( split, dtype=np.int ) )
+
+            # I'll have that as NumPy, thanks
+            np_frame = np.array( frame, dtype=np.float32 )
+            np_split = np.array( split, dtype=np.int )
+
+            # Convert to NDC (should be done in DetMan / SysMan)
+            np_frame[:2] /= 512.0
+            np_frame[:2] -= 1.
+            self.frames.append( np_frame )
+            self.splits.append( np_split )
 
     def handleCNC( self, dgm ):
         # currently just cameras
@@ -196,7 +205,8 @@ class Arbiter( object ):
                 if( self.tick.isSet() ):
                     data = [ self.cur_frame, self.splits[self.cur_frame], self.frames[self.cur_frame] ]
                     self.publishDets( data ) # Make this a callback in the det man?
-                    self.cur_frame += self.step
+                    self.ticks += 1
+                    self.cur_frame += (self.step + 1)
                     if( self.cur_frame > self.num_frames ):
                         self.cur_frame = 0
                     self.tick.clear()
@@ -212,24 +222,25 @@ class Arbiter( object ):
                 self.running.clear()
 
         # while running
-
         self.cleanClose()
 
     def publishDets( self, data ):
-        time, strides, dets = data
+        _, strides, dets = data
         self.data_pub.send_multipart( [ Comms.ABT_TOPIC_ROIDS_B, b"",
-                                        bytes( str( time ), "utf-8" ),
+                                        bytes( str( self.ticks ), "utf-8" ),
                                         strides.tobytes(),
                                         dets.tobytes() ] )
         #log.info( "sent dets" )
 
     def cleanClose( self ):
         print( self.system )
+        self.timer.stop()
         # Close sockets for graceful shutdown
         self.cnc_in.close()
         self.state_pub.close()
         self.data_pub.close()
         self._zctx.term()
+
 
 if( __name__ == "__main__" ):
     parser = argparse.ArgumentParser()
@@ -237,7 +248,7 @@ if( __name__ == "__main__" ):
                          help="Replay data file. Can be 'calibration' or 'rom'. Default: calibration" )
     parser.add_argument( "-r", "--rate", action="store", dest="rate", default=25,
                          help="Rate (fps). Default: 25", type=int )
-    parser.add_argument( "-k", "--skip", action="store", dest="step", default=4,
+    parser.add_argument( "-k", "--skip", action="store", dest="step", default=3,
                          help="Frames to skip. if data is 100fps and rate is 25 skip=3 to get realtime. Default:3",
                          type=int )
 
