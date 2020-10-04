@@ -781,10 +781,10 @@ class QDockingOutliner( QtWidgets.QDockWidget ):
         def __init__(self, parent ):
             super( QDockingOutliner.SceneTree, self ).__init__( parent )
             self.setSelectionBehavior( QtWidgets.QAbstractItemView.SelectRows )
-            self.setSelectionMode( QtWidgets.QAbstractItemView.MultiSelection )
+            self.setSelectionMode( QtWidgets.QAbstractItemView.ExtendedSelection )
             self.setHeaderHidden( True )
 
-        def selectionChanged( self, new, old ):
+        def selectionChanged( self, *args, **kwargs ):
             # Ignore old Vs New, just directly get the selected list
             selects = self.selectionModel().selectedRows()
 
@@ -797,6 +797,7 @@ class QDockingOutliner( QtWidgets.QDockWidget ):
                     if( hasattr( itm, "_data" ) ):
                         app.selection_que.append( itm._data )
             app.updateSelection()
+            return super( QDockingOutliner.SceneTree, self).selectionChanged(*args, **kwargs)
 
     def __init__( self, parent ):
         super( QDockingOutliner, self ).__init__( "Outliner", parent )
@@ -888,11 +889,11 @@ class QMain( QtWidgets.QMainWindow ):
         self._app.setApplicationName( "Testing Midget UI" )
         self._app.setOrganizationName( "Midget Software" )
         self._app.setOrganizationDomain( "" )
-        
+
         # BlackStyle
         dark_fusion = QDarkPalette()
         dark_fusion.apply2Qapp( self._app )
-        
+
         self.selection_que = []
         self.selection_observers = []
         self._actions = {}
@@ -930,7 +931,7 @@ class QMain( QtWidgets.QMainWindow ):
         tgt_list = list( map( lambda x: x.id, self.selection_que ) )
         self.command.send( verb, noun, value, tgt_list )
         log.info( "SENT: {}, {}, {} to {}".format( verb, noun, value, tgt_list ) )
-        
+
     def logNreport( self, msg, dwel=1200 ):
         log.info( msg )
         self.status_bar.showMessage( msg, dwel )
@@ -939,20 +940,20 @@ class QMain( QtWidgets.QMainWindow ):
         # tell oservers it's changed
         for obs in self.selection_observers:
             obs.selectionChanged( self.selection_que )
-            
+
         report = "None"
         if( len( self.selection_que ) > 0 ):
             report = "{}: {}".format( type(self.selection_que[0]), ", ".join( map( lambda x: str(x.id), self.selection_que ) ) )
-        
+
         log.info( "Selected: {}".format( report ) )
-        
+
     # Action CBs
     def _newFileCB( self ):
         self.textEdit.setText("")
-        
+
     def _exitFileCB( self ):
         self.close()
-        
+
     def _aboutHelpCB( self ):
         QtWidgets.QMessageBox.about(self, "About Midget",
             "I was born the son of a poor Filipino merchant. "
@@ -967,12 +968,12 @@ class QMain( QtWidgets.QMainWindow ):
         self.status_progress.setRange(0, 100 )
 
         self.status_lbl = QtWidgets.QLabel( "" )
-        
+
         self.status_bar.addPermanentWidget( self.status_progress, 0 )
         self.status_bar.addPermanentWidget( self.status_lbl, 0 )
-        
+
         self.setStatusBar( self.status_bar )
-        
+
     def _buildActions( self ):
         self._actions[ "newAction" ] = QtWidgets.QAction( QtGui.QIcon("new.png"), '&New', self )
         self._actions[ "newAction" ].setShortcut( QtGui.QKeySequence.New )
@@ -988,7 +989,7 @@ class QMain( QtWidgets.QMainWindow ):
         self._actions[ "aboutAction" ].setStatusTip( "Displays info about text editor" )
         self._actions[ "aboutAction" ].triggered.connect( self._aboutHelpCB )
 
-        
+
     def _buildMenuBar( self ):
         # Make Menu Actions
         menu_bar = self.menuBar()
@@ -999,7 +1000,7 @@ class QMain( QtWidgets.QMainWindow ):
 
         helpMenu = menu_bar.addMenu("&Help")
         helpMenu.addAction( self._actions[ "aboutAction" ] )
-        
+
     def _buildToolbar( self ):
         mainToolBar = self.addToolBar( "Main" )
         mainToolBar.setMovable( False )
@@ -1008,14 +1009,23 @@ class QMain( QtWidgets.QMainWindow ):
 
     def _buildUI( self ):
         self.setWindowTitle( "Main Window" )
-        self.setGeometry( 2300, 250, 400, 300 )
+
+        desktopWidth = QtWidgets.QApplication.desktop().width()
+        destktopHeight = QtWidgets.QApplication.desktop().height()
+        width = desktopWidth * 0.75
+        height = destktopHeight  * 0.75
+        x = (desktopWidth - width) / 2
+        y = (destktopHeight - height) / 2
+
+        self.setGeometry( x, y, width, height)
+
         # Setup Actions
         self._buildActions()
-        
+
         # Setup Menu Bar & Tool Bar
         self._buildMenuBar()
         self._buildToolbar()
-        
+
         # Central Widget
         self._ctx = QGLView()
         self.setCentralWidget( self._ctx )
@@ -1298,8 +1308,11 @@ class QGLView( QtOpenGL.QGLWidget ):
 
 
 if __name__ == "__main__":
+
+    os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
+    QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling)
     app = QtWidgets.QApplication()
     mainWindow = QMain( app )
+
     sys.exit( app.exec_() )
-
-
+    
