@@ -16,6 +16,8 @@ import sys, os
 _git_root_ = os.path.dirname( os.path.dirname( os.path.dirname( os.path.dirname( os.path.realpath(__file__) ) ) ) )
 CODE_PATH = os.path.join( _git_root_, "midget", "Python" )
 sys.path.append( CODE_PATH )
+RES_PATH = os.path.join( _git_root_, "midget", "Python", "GUI", "resources" ) # to be replaced with a resource bundle
+
 
 logging.basicConfig()
 log = logging.getLogger( __name__ )
@@ -885,38 +887,94 @@ class QMain( QtWidgets.QMainWindow ):
     def __init__( self, parent ):
         super( QMain, self ).__init__()
         self._app = parent
+
         # app config
         self._app.setApplicationName( "Testing Midget UI" )
         self._app.setOrganizationName( "Midget Software" )
         self._app.setOrganizationDomain( "" )
 
+        screen, placement = self._getPrefDims()
+
         # BlackStyle
         dark_fusion = QDarkPalette()
         dark_fusion.apply2Qapp( self._app )
 
+        # Splash Screen & Test Card
+        self.test_card = QtGui.QPixmap( os.path.join( RES_PATH, "cardK.png" ) )
+        self.splash = QtWidgets.QSplashScreen( self, pixmap=self.test_card )
+        self.splash.move( screen.availableGeometry().center() - self.splash.rect().center() )
+        self.splash.show()
+
+        # Some UI stuff
         self.selection_que = []
         self.selection_observers = []
         self._actions = {}
 
+        # Centroid receiving
+        self.dets_q = SimpleQueue()
+        self.dets_time = None
+        self.dets_strides = []
+        self.dets_dets = []
+
         # Arbiter Comms channels
         # TODO: Test if Arbiter is running, spawn one if needed
+        self.splash.showMessage( "Starting C&C" )
         self.command = Comms.ArbiterControl()
-        self.dets_q = SimpleQueue()
+        self.splash.showMessage( "Starting Listener" )
         self.dets_listen = QMain.ArbiterListen( self.dets_q )
         self.dets_listen.found.connect( self.getNewFrame )
 
         self.packet_count = 0
 
+        self.splash.showMessage( "Building UI" )
         self._buildUI()
+
+        # Show the Interface
+        self.setGeometry( placement )
+        self.splash.showMessage( "01 Ready" )
         self.show()
-        self.logNreport( "Launched", 5000 )
-        log.info( "another" )
+        self.splash.finish( self )
 
         # start the det recever
         self.dets_listen.start()
+        self.logNreport( "Started Centroid receiver", 5000 )
+
+    def _getPrefDims( self ):
+        """ Get prefered screen dimentions and prefered screen.
+            1 screen Centre
+            2 screens:
+                pick biggest
+                or if both the same size, use system defined primary
+        """
+        # Find Physicaly biggest Screen
+        big_scr = self._app.primaryScreen()
+        big_dim = self._app.primaryScreen().physicalSize().width()
+        screens = self._app.screens()
+        for screen in screens:
+            width = screen.physicalSize().width()
+            if (width > big_dim):
+                big_scr = screen
+                big_dim = width
+
+        # set window to fit nicely inside it
+        desk_w = big_scr.availableGeometry().width()
+        desk_h = big_scr.availableGeometry().height()
+        width = desk_w * 0.75
+        height = desk_h * 0.75
+
+        # place in the screen's available canvas
+        x = ((desk_w - width) / 2) + big_scr.availableGeometry().left()
+        y = ((desk_h - height) / 2) + big_scr.availableGeometry().top()
+
+        tgt_rect = QtCore.QRect( x, y, width, height )
+
+        return (big_scr, tgt_rect)
 
     def getNewFrame( self ):
         det_fps, time, strides, dets = self.dets_q.get()
+        self.dets_time = time
+        self.dets_strides = strides
+        self.dets_dets = dets
         self.packet_count += 1
         num_cams = len( strides ) - 1
         roid_count = [ 0 for _ in range( num_cams ) ]
@@ -1010,19 +1068,10 @@ class QMain( QtWidgets.QMainWindow ):
     def _buildUI( self ):
         self.setWindowTitle( "Main Window" )
 
-        desktopWidth = QtWidgets.QApplication.desktop().width()
-        destktopHeight = QtWidgets.QApplication.desktop().height()
-        width = desktopWidth * 0.75
-        height = destktopHeight  * 0.75
-        x = (desktopWidth - width) / 2
-        y = (destktopHeight - height) / 2
-
-        self.setGeometry( x, y, width, height)
-
-        # Setup Actions
+        self.splash.showMessage( "Setting up Actions" )
         self._buildActions()
 
-        # Setup Menu Bar & Tool Bar
+        self.splash.showMessage( "Building Menu & Tool bars" )
         self._buildMenuBar()
         self._buildToolbar()
 
@@ -1031,13 +1080,17 @@ class QMain( QtWidgets.QMainWindow ):
         self.setCentralWidget( self._ctx )
 
         # Add docables
+        self.splash.showMessage( "Creating Dockable Editors" )
+        self.splash.showMessage( "Editor: Log" )
         logDockWidget = QDockingLog( self )
         self.addDockWidget( QtCore.Qt.BottomDockWidgetArea, logDockWidget )
 
+        self.splash.showMessage( "Editor: Outliner" )
         outliner = QDockingOutliner( self )
         self.addDockWidget( QtCore.Qt.LeftDockWidgetArea, outliner )
 
         # setup the attribute editor = TODO: This better
+        self.splash.showMessage( "Editor: Attributes" )
         cam = Camera("anon", -1)
         mesh = Mesh()
         atribs = QDockingAttrs( self )
@@ -1047,15 +1100,19 @@ class QMain( QtWidgets.QMainWindow ):
         self.addDockWidget( QtCore.Qt.LeftDockWidgetArea, atribs )
 
         # Region tool
+        self.splash.showMessage( "Editor: Masking" )
         regions = QDockingRegions( self )
         self.addDockWidget( QtCore.Qt.RightDockWidgetArea, regions )
 
         # activity monitor
+        self.splash.showMessage( "Editor: Cameras" )
         self.cam_mon = QDockingCamActivityMon( self )
         self.addDockWidget( QtCore.Qt.RightDockWidgetArea, self.cam_mon )
 
         # setup status bar
         self._buildStatusBar()
+
+        # TODO: Handle windowClosing and stop threads / close sockets!
 
 
 class QGLCameraView( QtOpenGL.QGLWidget ):
