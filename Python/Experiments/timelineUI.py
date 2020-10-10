@@ -152,7 +152,7 @@ class QTimeLine(QWidget):
         scale = self.getScale()
 
         self.ticks()
-        width = self.width() / (self._increment )
+        width = round(self.width() / (self._increment ))
         w = 0
         point = 0
         value = self.start() / float(self._tick)
@@ -163,7 +163,6 @@ class QTimeLine(QWidget):
             missing = self._tick * math.ceil(value) - self.start()
             w = missing * self.frameWidth()
             point = missing * self.frameWidth()
-
         i = 0
         while w < self.width():
             w = self.get_frame_position(w)
@@ -267,7 +266,7 @@ class QTimeLine(QWidget):
 
     def setPointerPositions(self):
         self.pointerPos = round(self.selectedFrameNr * self.width() / self.duration())
-        self.pointerNext = self.pointerPos + round(self.frameWidth())
+        self.pointerNext = self.pointerPos + self.frameWidth()
 
     def get_frame_position(self, x):
         pos = round(self.duration() * x / self.width())
