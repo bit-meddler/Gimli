@@ -10,7 +10,6 @@ from PySide2.QtWidgets import QWidget, QFrame, QScrollArea, QVBoxLayout
 import sys
 import os
 import math
-import camCtrlUI
 from numpy import load
 
 __textColor__ = Qt.darkGray
@@ -165,7 +164,6 @@ class QTimeLine(QWidget):
             w = missing * self.frameWidth()
             point = missing * self.frameWidth()
 
-        print(self.frameWidth(), w,missing, value, first, self._tick)
         i = 0
         while w < self.width():
             w = self.get_frame_position(w)
