@@ -204,15 +204,14 @@ class SceneModel( QtCore.QAbstractItemModel ):
         self._scene = Scene()
         for i in range(10):
             self._scene.addNode( "/system/cams", "cam_{}".format(i) )
+        self.path_indexs = {}
 
     def getNodeFromIndex( self, index ):
         node = index.internalPointer()
         if( node is not None ):
             #print( "idx", node )
             return node
-        else:
-            print("Invalid")
-            print( index )
+
         return self._scene.root
 
     def rowCount( self, parent ):
@@ -251,35 +250,42 @@ class SceneModel( QtCore.QAbstractItemModel ):
 
     def parent( self, index ):
         path = index.internalPointer()
-        node = self._scene.data[ path ]
-        parent = self._scene.data[ node["parent"] ]
 
-        print( "p", path, node, parent )
-        if( node["parent"] == self._scene.root ):
+        if( self._scene.data[ path ]["parent"] == self._scene.root ):
             return QtCore.QModelIndex()
-        return self.createIndex( parent["row"], 0 , node["parent"] )
+
+        return self.createIndex( self._scene.data[ self._scene.data[ path ]["parent"] ]["row"], 0, self._scene.data[ path ]["parent"] )
     
     def genIndex( self, path ):
-        node = self._scene.data[ path ]
-        return self.createIndex( node["row"], 0 , path )
+        parent = self._scene.tree[ "/" ]
+        parent_idx = QtCore.QModelIndex()
+        for step in path.strip("/").split("/"):
+            address = parent[step]
+            parent = self._scene.tree[ address ]
+            data = self._scene.data[ address ]
+            parent_idx = self.index( data["row"], 0, parent_idx )
+        print( parent_idx, parent_idx.internalPointer() )
+        return parent_idx
     
     def index( self, row, col, parent ):
+        if( not self.hasIndex( row, col, parent ) ):
+            return QtCore.QModelIndex()
+
         parent_path = self.getNodeFromIndex( parent )
         if( self._scene.tree[ parent_path ] is not None ):
             if( row >= self._scene.data[ parent_path ][ "children" ] ):
                 print( "Wrong parent inspected" )
                 print( row, col, parent_path )
-
             try:
                 path = self._scene.getODbyIdx( self._scene.tree[ parent_path ], row )
-                print( "Idx", path, row )
             except (StopIteration, IndexError):
                 print( "Error with:", row, col, parent_path )
                 pprint( self._scene.tree )
                 pprint( self._scene.data )
-                exit(0)
-
-            return self.createIndex( row, col, path )
+                #exit(0)
+            idx = self.createIndex( row, col, path )
+            self.path_indexs[path] = idx
+            return idx
         else:
             return QtCore.QModelIndex()
     
@@ -327,9 +333,9 @@ class QMain( QtWidgets.QMainWindow ):
         sel = tree_v.selectionModel()
         
         list_v1.setSelectionModel( sel )
-        list_v1.setRootIndex( self.model.index( 1, 0, QtCore.QModelIndex() ) )
+        list_v1.setRootIndex( self.model.genIndex( "/system/cams" ) )
         list_v2.setSelectionModel( sel )
-        list_v2.setRootIndex( self.model.index( 1, 0, QtCore.QModelIndex() ) )
+        list_v2.setRootIndex( self.model.genIndex( "/system" ) )
         
         self._ctx = QtWidgets.QWidget()
         self._ctx.setLayout( grid )
