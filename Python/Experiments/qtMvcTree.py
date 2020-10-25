@@ -195,7 +195,9 @@ class SceneModel( QtCore.QAbstractItemModel ):
 
         # 'Node' Groups
         self.grp_skel = SkelGroup( "Skeletons", self.root )
-        self.grp_cams = CameraGroup( "Cameras", self.root )
+        self.grp_sys = CameraGroup( "System", self.root )
+        self.grp_sync = CameraGroup( "Sync", self.grp_sys )
+        self.grp_cams = CameraGroup( "Cameras", self.grp_sys )
         self.grp_view = ViewGroup( "Views",     self.root )
 
     def populatedGroups( self ):
@@ -253,6 +255,9 @@ class SceneModel( QtCore.QAbstractItemModel ):
         return self.createIndex( node.row(), 0 , node )
     
     def index( self, row, col, parent ):
+        if( not self.hasIndex( row, col, parent ) ):
+            return QtCore.QModelIndex()
+
         parent_node = self.getNodeIndex( parent )
         
         child = parent_node.getChild( row )
@@ -341,9 +346,9 @@ class QMain( QtWidgets.QMainWindow ):
         sel = tree_v.selectionModel()
         
         list_v1.setSelectionModel( sel )
-        list_v1.setRootIndex( self.model.index( 1, 0, QtCore.QModelIndex() ) )
+        list_v1.setRootIndex( self.model.genIndex( self.model.grp_cams ) )
         list_v2.setSelectionModel( sel )
-        list_v2.setRootIndex( self.model.index( 1, 0, QtCore.QModelIndex() ) )
+        list_v2.setRootIndex( self.model.genIndex( self.model.grp_sys ) )
         
         self._ctx = QtWidgets.QWidget()
         self._ctx.setLayout( grid )
