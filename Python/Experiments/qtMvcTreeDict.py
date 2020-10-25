@@ -36,8 +36,21 @@ class Scene( object ):
     TYPE_GROUP_VIEW = "GP_VIEW"
     TYPE_GROUP_SKELETONS = "GP_SKELETON"
 
+    # Undo system
+    UNDO_ACTIONS = {
+        "ADD_N" : "DEL_N",
+        "DEL_N" : "ADD_N",
+        "ADD_D" : "DEL_D",
+        "DEL_D" : "ADD_D",
+
+        "SET_N" : "SET_O",
+        "SET_O" : "SET_N",
+    }
+    UNDO_KVS = ( "SET_N", "SET_O", )
+
 
     def __init__( self ):
+        # Scene root
         self.root = "/"
         self.data = {
             self.root : {
@@ -51,6 +64,13 @@ class Scene( object ):
         } # "/path/to/data" : dataDict
         self.tree = OrderedDict( {self.root:OrderedDict()} ) # { "":{"a":"/a","b":"/b"}, "/b":{"c":"/b/c"} }
 
+        # Undo system
+        self._undo_stack = []
+        self._redo_stack = []
+        self._undo = None
+        self._undo_ignore = True
+        self.undo_max = 42
+
         # Default Groups
         self.addNode( self.root, "views", type=Scene.TYPE_GROUP_VIEW )
         self.addNode( self.root, "system", type=Scene.TYPE_GROUP_SYS )
@@ -58,14 +78,68 @@ class Scene( object ):
         self.addNode( "/system", "cams", type=Scene.TYPE_GROUP_SYS_CAMS )
         self.addNode( self.root, "skels", type=Scene.TYPE_GROUP_SKELETONS )
 
-        self.addNode( self.root, "dummy" )
+        self._undo_ignore = False
+        self.beginUndo()
 
     @staticmethod
     def getODbyIdx( data:OrderedDict, idx ):
-        return list( data.values() )[ idx ]
-        #return next( islice( data.values(), idx, idx+1 ) )
+        #return list( data.values() )[ idx ]
+        return next( islice( data.values(), idx, idx+1 ) )
 
-    def safeName( self, name:str, parent ) -> str:
+    @staticmethod
+    def join( *args ) -> str:
+        """ TODO: must be a better way of doing join """
+        if( args[0]=="/" ):
+            return  "/".join( ["", *args[1:]] )
+        else:
+            return "/".join( args )
+
+    @staticmethod
+    def split( path:str ) -> list:
+        return path.strip("/").split("/")
+
+    def beginUndo( self, name:str="unknown" ):
+        if( self._undo is not None ):
+            self._undo_stack.append( self._undo )
+
+        self._undo_ignore = False # assume we're interested in undos if we've started an interaction
+        self._undo = {"action":name} # other keys "add", "del", "set"
+
+    def addUndo( self, action:str, path:str, action_data:dict=None ) -> bool:
+        if( self._undo_ignore ):
+            return False
+
+        if( action not in Scene.UNDO_KVS ):
+            # Create or delete nodes / data
+            action_undos = self._undo.setdefault( action, set() )
+            action_undos.add( path )
+        else:
+            # KV pairs for setting values
+            action_undos = self._undo.setdefault( action, dict() )
+            for key, value in action_data.items():
+                action_undos[ path ][ key ] = value
+
+        if( len(self._undo_stack) > self.undo_max ):
+            self._undo_stack.pop( 0 ) # drop oldest undo
+        return True
+
+    def doUndo( self ):
+        self._undo_ignore = True
+        # invert the operations of the current undo
+        # ???
+
+        # place the undo on the end of the redo stack
+        self._redo_stack.append( self._undo )
+
+        # pop the previous undo from the undo stack and make current
+        if( self._undo_stack ): # has items
+            self._undo = self._undo_stack.pop()
+
+        if (len( self._redo_stack ) > self.undo_max):
+            self._redo_stack.pop( 0 )  # drop oldest redo
+        self._undo_ignore = False
+
+    def safeName( self, name:str, parent:(list, dict) ) -> str:
         """ look in an 'in'able collection and make name unique """
         new_name = name
         count = 1
@@ -78,14 +152,8 @@ class Scene( object ):
         """ Does fully qualified path 'path' exist? """
         return bool( path in self.data )
 
-    def addNodeData( self, path, name, row, type=TYPE_NODE ):
-        parent_path, _ = path.rsplit("/",1)
-        if( parent_path==""):
-            parent_path="/"
-        self.data[ path ] = { "name":name, "parent":parent_path, "children":0, "row":row, "data":None, "type":type }
-
-    def getPathData( self, tgt_path:str, node_mode:bool ) -> tuple:
-        route = tgt_path.strip("/").split("/")
+    def getPathInfo( self, tgt_path:str, node_mode:bool ) -> tuple:
+        route = self.split( tgt_path )
         path = "/" # allways start at root
         parent_path = "/"
         parent = self.tree
@@ -110,16 +178,31 @@ class Scene( object ):
             row = list( parent.keys() ).index( leaf )
         return (parent_path, parent, leaf, row, True)
 
+    def addNode( self, path:str, name:str, type:str=TYPE_NODE ):
+        """
+        Add a Node to the Tree Structure
+        :param path: parent's path in structure
+        :param name: node name - this may be changed if there is a collision
+        :param type: Scene.TYPE_ of Node, for ui
+        :return: fully qualified path of Node created
+        """
+        new_path = self.join( path, name )
+        parent_path, parent, leaf, _, reachable = self.getPathInfo( new_path, True )
+        if( reachable ):
+            # make sure name dosen't collide
+            name = self.safeName( leaf, parent )
+            new_path = self.join(parent_path, name)
+            parent[ name ] = new_path
+            self.data[ parent_path ][ "children" ] += 1
+            self.tree[ new_path ] = None
+            row = list( parent.keys() ).index( name )
+            self.addNodeData( new_path, name, row, type=type )
+            # add to Undo Queue
+            undoable = self.addUndo( "ADD_N", new_path )
+            return new_path
 
-    def join( self, *args ):
-        """ TODO: must be a better way of doing join """
-        if( args[0]=="/" ):
-            return  "/".join( ["", *args[1:]] )
-        else:
-            return "/".join( args )
-
-    def delNode( self, path ):
-        parent_path, parent, name, _, reachable = self.getPathData( path, True )
+    def delNode( self, path:str ):
+        parent_path, parent, name, _, reachable = self.getPathInfo( path, True )
         if( reachable ):
             del( parent[ name ] )
             del( self.data[ path ])
@@ -131,27 +214,17 @@ class Scene( object ):
                 if( data is not None ):
                     data["row"] = i
             # add to Undo Queue
-            # undos.add.add( new_path )
+            undoable = self.addUndo( "DEL_N", path )
 
-    def addNode( self, path, name, type=TYPE_NODE ):
-        new_path = self.join( path, name )
-        parent_path, parent, leaf, _, reachable = self.getPathData( new_path, True )
-        if( reachable ):
-            # make sure name dosen't collide
-            name = self.safeName( leaf, parent )
-            new_path = self.join(parent_path, name)
-            parent[ name ] = new_path
-            self.data[ parent_path ][ "children" ] += 1
-            self.tree[ new_path ] = None
-            row = list( parent.keys() ).index( name )
-            self.addNodeData( new_path, name, row, type=type )
-            # add to Undo Queue
-            # undos.del.add( new_path )
-            return new_path
+    def addNodeData( self, path:str, name:str, row:int, type:str=TYPE_NODE ):
+        parent_path, _ = path.rsplit("/",1)
+        if( parent_path==""):
+            parent_path="/"
+        self.data[ path ] = { "name":name, "parent":parent_path, "children":0, "row":row, "data":None, "type":type }
 
-    def addData( self, path, name, data:dict ) -> str:
+    def addData( self, path:str, name:str, data:dict ) -> str:
         new_path = self.join( path, name )
-        parent_path, parent, leaf, _, reachable = self.getPathData( new_path, False )
+        parent_path, parent, leaf, _, reachable = self.getPathInfo( new_path, False )
         if( reachable ):
             print(parent_path, parent, reachable)
             if( self.data[ parent_path ]["data"] is None ):
@@ -162,14 +235,20 @@ class Scene( object ):
             new_path = self.join( parent_path, new_name )
             self.data[ new_path ] = data
             # add to Undo Queue
-            # undos.del.add( new_path )
+            undoable = self.addUndo( "ADD_D", new_path )
             return new_path
 
-    def setValue( self, path, key, value ):
+    def delData( self, path:str ):
+        # ... ???
+        undoable = self.addUndo( "DEL_D", path )
+
+    def setValue( self, path:str, key:str, value ):
         if( path in self.data ):
             # add to Undo Queue
-            # undos.set.add( (path,key,value) )
+            old_value = self.data[ path ][ key ]
+            undoable = self.addUndo( "SET_O", path, {key:old_value} )
             self.data[ path ][ key ] = value
+            undoable = self.addUndo( "SET_N", path, {key:value} )
         else:
             # should we just create a node?
             pass
@@ -204,12 +283,11 @@ class SceneModel( QtCore.QAbstractItemModel ):
         self._scene = Scene()
         for i in range(10):
             self._scene.addNode( "/system/cams", "cam_{}".format(i) )
-        self.path_indexs = {}
 
     def getNodeFromIndex( self, index ):
         node = index.internalPointer()
         if( node is not None ):
-            #print( "idx", node )
+            #print( "idx", node, index )
             return node
 
         return self._scene.root
@@ -254,12 +332,15 @@ class SceneModel( QtCore.QAbstractItemModel ):
         if( self._scene.data[ path ]["parent"] == self._scene.root ):
             return QtCore.QModelIndex()
 
-        return self.createIndex( self._scene.data[ self._scene.data[ path ]["parent"] ]["row"], 0, self._scene.data[ path ]["parent"] )
+        parent_path = self._scene.data[ path ]["parent"]
+        return self.createIndex( self._scene.data[ parent_path ]["row"], 0, parent_path )
     
     def genIndex( self, path ):
         parent = self._scene.tree[ "/" ]
         parent_idx = QtCore.QModelIndex()
         for step in path.strip("/").split("/"):
+            if( step == "" ):
+                break
             address = parent[step]
             parent = self._scene.tree[ address ]
             data = self._scene.data[ address ]
@@ -267,28 +348,20 @@ class SceneModel( QtCore.QAbstractItemModel ):
         print( parent_idx, parent_idx.internalPointer() )
         return parent_idx
     
-    def index( self, row, col, parent ):
+    def index( self, row:int, col:int, parent ):
         if( not self.hasIndex( row, col, parent ) ):
             return QtCore.QModelIndex()
 
         parent_path = self.getNodeFromIndex( parent )
         if( self._scene.tree[ parent_path ] is not None ):
-            if( row >= self._scene.data[ parent_path ][ "children" ] ):
-                print( "Wrong parent inspected" )
-                print( row, col, parent_path )
-            try:
-                path = self._scene.getODbyIdx( self._scene.tree[ parent_path ], row )
-            except (StopIteration, IndexError):
-                print( "Error with:", row, col, parent_path )
-                pprint( self._scene.tree )
-                pprint( self._scene.data )
-                #exit(0)
+            path = self._scene.getODbyIdx( self._scene.tree[ parent_path ], row )
             idx = self.createIndex( row, col, path )
-            self.path_indexs[path] = idx
+            #print( idx, idx.internalPointer() )
             return idx
         else:
             return QtCore.QModelIndex()
-    
+
+    # ToDo: this is going to be hard...
     def insertRows( self, position, rows, parent=QtCore.QModelIndex() ):
         pass
     
@@ -335,7 +408,7 @@ class QMain( QtWidgets.QMainWindow ):
         list_v1.setSelectionModel( sel )
         list_v1.setRootIndex( self.model.genIndex( "/system/cams" ) )
         list_v2.setSelectionModel( sel )
-        list_v2.setRootIndex( self.model.genIndex( "/system" ) )
+        list_v2.setRootIndex( self.model.genIndex( "/" ) )
         
         self._ctx = QtWidgets.QWidget()
         self._ctx.setLayout( grid )
