@@ -71,35 +71,33 @@ class GLWidget( QtWidgets.QOpenGLWidget ):
         self.bgcolor = [ 0, 0.1, 0.1, 1 ]
         self.shader_attr_locs = {}
 
+        # something to move it
+        self.rot = 1.0
+
     def _prepareResources( self ):
         # the item
         self.verts = np.asarray( [ -0.5, -0.5, 0.0,
                                     0.5, -0.5, 0.0,
                                     0.0,  0.5, 0.0, ], dtype=np.float32 )
-        self.vert_cols = np.eye( 3, dtype=np.float32 )
+        self.vert_cols = np.eye( 3, dtype=np.float32 ).ravel()
+
+        self.big_buff = np.concatenate( [self.verts, self.vert_cols] )
+
+        self.bb_strides = [ 0, self.verts.nbytes ]
 
         # VBOs
         vbo = GL.glGenBuffers( 1 )
         GL.glBindBuffer( GL.GL_ARRAY_BUFFER, vbo )
-        GL.glBufferData( GL.GL_ARRAY_BUFFER, self.verts.nbytes, self.verts, GL.GL_STATIC_DRAW )
-
-        #col = GL.glGenBuffers( 1 )
-        #GL.glBindBuffer( GL.GL_ARRAY_BUFFER, col )
-        #GL.glBufferData( GL.GL_ARRAY_BUFFER, self.vert_cols.nbytes, self.vert_cols, GL.GL_STATIC_DRAW )
-
-        #self.buffers = ( vbo, col )
-
-        # something to move it
-        self.rot = 1.0
+        GL.glBufferData( GL.GL_ARRAY_BUFFER, self.big_buff.nbytes, self.big_buff, GL.GL_STATIC_DRAW )
 
 
     def _qglShader( self ):
         self.shader = QtGui.QOpenGLShaderProgram( self.context() )
 
-        self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, Shaders.vtx_src  )
-        self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Fragment, Shaders.frg_src )
+        self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, Shaders.vtx2_src  )
+        self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Fragment, Shaders.frg2_src )
 
-        program_attrs = ("position")#, "colour")
+        program_attrs = ("position", "colour")
 
         for i, name in enumerate( program_attrs ):
             self.shader_attr_locs[ name ] = i
@@ -108,9 +106,9 @@ class GLWidget( QtWidgets.QOpenGLWidget ):
         self.shader.link()
         self.shader.bind()
 
-        for name in program_attrs:
+        for name, stride in zip( program_attrs, self.bb_strides ):
             GL.glEnableVertexAttribArray( self.shader_attr_locs[ name ] )
-            GL.glVertexAttribPointer( self.shader_attr_locs[ name ], 3, GL.GL_FLOAT, GL.GL_FALSE, 0, None )
+            GL.glVertexAttribPointer( self.shader_attr_locs[ name ], 3, GL.GL_FLOAT, GL.GL_FALSE, 0, ctypes.c_void_p( stride ) )
 
     # Qt funcs -------------------------------------------------------
     def minimumSizeHint(self):
