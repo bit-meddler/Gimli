@@ -71,6 +71,9 @@ class GLWidget( QtWidgets.QOpenGLWidget ):
         self.bgcolor = [ 0, 0.1, 0.1, 1 ]
         self.shader_attr_locs = {}
 
+        # canvas size
+        self.wh = ( self.geometry().width(), self.geometry().height() )
+
         # something to move it
         self.rot = 1.0
 
@@ -136,10 +139,30 @@ class GLWidget( QtWidgets.QOpenGLWidget ):
     def paintGL( self ):
         GL.glClear( GL.GL_COLOR_BUFFER_BIT )
         GL.glRotate( self.rot, 0.0, 0.0, 1.0 )
+        hw, hh = int(self.wh[0] / 2), int(self.wh[1] / 2)
+
+        # view1
+        GL.glViewport( 0, 0, hw, hh )
         GL.glDrawArrays( GL.GL_TRIANGLE_STRIP, 0, 4 )
+
+        # view2
+        GL.glViewport( hw, 0, hw, hh )
+        GL.glDrawArrays( GL.GL_TRIANGLE_STRIP, 0, 4 )
+
+        # view3
+        GL.glViewport( 0, hh, hw, hh )
+        GL.glDrawArrays( GL.GL_TRIANGLE_STRIP, 0, 4 )
+
+        # view4
+        GL.glViewport( hw, hh, hw, hh )
+        GL.glDrawArrays( GL.GL_TRIANGLE_STRIP, 0, 4 )
+
+
+
         self.rot += 1.0
 
     def resizeGL( self, width, height ):
+        self.wh = ( width, height )
         GL.glViewport( 0, 0, width, height )
     
     
