@@ -84,18 +84,28 @@ class GLWidget( QtWidgets.QOpenGLWidget ):
             [ -0.5, -0.5, 0.0, 1.0, 0.0, 0.0 ],
             [  0.5, -0.5, 0.0, 0.0, 1.0, 0.0 ],
             [ -0.5,  0.5, 0.0, 0.0, 0.0, 1.0 ],
-            [  0.5,  0.5, 0.0, 1.0, 1.0, 1.0 ]], dtype=np.float32 )
+            [  0.5,  0.5, 0.0, 1.0, 1.0, 1.0 ],
+            [  0.0,  0.75, 0.0, 1.0, 1.0, 0.0 ]], dtype=np.float32 )
 
         self.bb_ln_sz = self.big_buff[0,:].nbytes
         self.bb_strides = [ 0, self.big_buff[0,:3].nbytes ]
 
-        # VBOs
+        self.indexes = np.asarray(
+            [ 0, 1, 2,
+              1, 2, 3,
+              2, 3, 4 ], dtype=np.uint16 )
+
+        # VBO
         vbo = GL.glGenBuffers( 1 )
         GL.glBindBuffer( GL.GL_ARRAY_BUFFER, vbo )
         GL.glBufferData( GL.GL_ARRAY_BUFFER, self.big_buff.nbytes, self.big_buff.ravel(), GL.GL_STATIC_DRAW )
 
+        ebo = GL.glGenBuffers( 1 )
+        GL.glBindBuffer( GL.GL_ELEMENT_ARRAY_BUFFER, ebo )
+        GL.glBufferData( GL.GL_ELEMENT_ARRAY_BUFFER, self.indexes.nbytes, self.indexes.ravel(), GL.GL_STATIC_DRAW )
 
     def _qglShader( self ):
+
         self.shader = QtGui.QOpenGLShaderProgram( self.context() )
 
         self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, Shaders.vtx2_src  )
@@ -134,6 +144,8 @@ class GLWidget( QtWidgets.QOpenGLWidget ):
         # shaders
         self._qglShader()
         # misc
+        GL.glHint( GL.GL_POINT_SMOOTH_HINT, GL.GL_NICEST )
+        GL.glEnable( GL.GL_POINT_SMOOTH )
         GL.glClearColor( *self.bgcolor )
 
     def paintGL( self ):
@@ -147,15 +159,16 @@ class GLWidget( QtWidgets.QOpenGLWidget ):
 
         # view2
         GL.glViewport( hw, 0, hw, hh )
-        GL.glDrawArrays( GL.GL_TRIANGLE_STRIP, 0, 4 )
+        GL.glDrawArrays( GL.GL_LINE_LOOP, 0, len(self.big_buff) )
 
         # view3
         GL.glViewport( 0, hh, hw, hh )
-        GL.glDrawArrays( GL.GL_TRIANGLE_STRIP, 0, 4 )
+        GL.glDrawElements( GL.GL_TRIANGLES, len(self.indexes), GL.GL_UNSIGNED_SHORT, ctypes.c_void_p( 0 ) )
 
-        # view4
+        # view4 - try out some points
         GL.glViewport( hw, hh, hw, hh )
-        GL.glDrawArrays( GL.GL_TRIANGLE_STRIP, 0, 4 )
+        GL.glPointSize( 12 )
+        GL.glDrawArrays( GL.GL_POINTS, 0, len(self.big_buff) )
 
 
 
