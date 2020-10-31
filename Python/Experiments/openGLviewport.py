@@ -140,7 +140,7 @@ class GLWidget( QtWidgets.QOpenGLWidget ):
         self.rot += 1.0
 
     def resizeGL( self, width, height ):
-        pass
+        GL.glViewport( 0, 0, width, height )
     
     
 if( __name__ == "__main__" ):
