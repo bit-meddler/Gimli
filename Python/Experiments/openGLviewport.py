@@ -63,6 +63,50 @@ class Shaders( object ):
         colour = vec4( fcolour, 1.0 ) ;
     }
     """
+    vtx3_src = """
+    # version 330 core
+
+    layout( location=0 ) in vec3 position ;
+    layout( location=1 ) in vec3 colour ;
+
+    uniform mat4 rotation ;
+
+    out vec3 fcolour ;
+
+    void main() {
+        fcolour = colour ;
+        gl_Position = rotation * vec4( position, 1.0 ) ;
+    }
+    """
+
+
+class Math3D( object ):
+
+    @staticmethod
+    def genRotMat( axis, angle, degrees=False ):
+        angle = np.deg2rad( angle ) if degrees else angle
+        axis = axis.upper()
+        ret = np.eye(4)
+
+        ca = np.cos( angle )
+        sa = np.sin( angle )
+
+        if( axis == "X" ):
+            mat = [ [  1.0, 0.0, 0.0 ],
+                    [  0.0,  ca, -sa ],
+                    [  0.0,  sa,  ca ] ]
+        elif( axis == "Y" ):
+            mat = [ [  ca,  0.0,  sa ],
+                    [ 0.0,  1.0, 0.0 ],
+                    [ -sa,  0.0,  ca ] ]
+        elif( axis == "Z" ):
+            mat = [ [  ca, -sa, 0.0 ],
+                    [  sa,  ca, 0.0 ],
+                    [ 0.0, 0.0, 1.0 ] ]
+
+        ret[:3,:3] = np.asarray( mat, dtype=np.float32 )
+
+        return ret
 
 class GLWidget( QtWidgets.QOpenGLWidget ):
 
@@ -76,39 +120,50 @@ class GLWidget( QtWidgets.QOpenGLWidget ):
 
         # something to move it
         self.rot = 1.0
+        self.rot_loc = None
 
     def _prepareResources( self ):
         # the item
         self.big_buff = np.asarray( [
-            #  X     Y    Z    R    G    B
-            [ -0.5, -0.5, 0.0, 1.0, 0.0, 0.0 ],
-            [  0.5, -0.5, 0.0, 0.0, 1.0, 0.0 ],
-            [ -0.5,  0.5, 0.0, 0.0, 0.0, 1.0 ],
-            [  0.5,  0.5, 0.0, 1.0, 1.0, 1.0 ],
-            [  0.0,  0.75, 0.0, 1.0, 1.0, 0.0 ]], dtype=np.float32 )
+            #  X     Y     Z    R    G    B
+            [ -0.5, -0.5,  0.5, 1.0, 0.0, 0.0 ],
+            [  0.5, -0.5,  0.5, 0.0, 1.0, 0.0 ],
+            [  0.5,  0.5,  0.5, 0.0, 0.0, 1.0 ],
+            [ -0.5,  0.5,  0.5, 1.0, 1.0, 0.0 ],
+            
+            [ -0.5, -0.5, -0.5, 1.0, 0.0, 0.0 ],
+            [  0.5, -0.5, -0.5, 0.0, 1.0, 0.0 ],
+            [  0.5,  0.5, -0.5, 0.0, 0.0, 1.0 ],
+            [ -0.5,  0.5, -0.5, 1.0, 1.0, 0.0 ],
+            
+            ], dtype=np.float32 )
 
         self.bb_ln_sz = self.big_buff[0,:].nbytes
         self.bb_strides = [ 0, self.big_buff[0,:3].nbytes ]
 
         self.indexes = np.asarray(
-            [ 0, 1, 2,
-              1, 2, 3,
-              2, 3, 4 ], dtype=np.uint16 )
+            [ 0, 1, 2,  2, 3, 0,
+              4, 5, 6,  6, 7, 4,
+              4, 5, 1,  1, 0, 4,
+              6, 7, 3,  3, 2, 6,
+              5, 6, 2,  2, 1, 5,
+              7, 4, 0,  0, 3, 7,
+            ], dtype=np.uint16 )
 
         # VBO
         vbo = GL.glGenBuffers( 1 )
         GL.glBindBuffer( GL.GL_ARRAY_BUFFER, vbo )
-        GL.glBufferData( GL.GL_ARRAY_BUFFER, self.big_buff.nbytes, self.big_buff.ravel(), GL.GL_STATIC_DRAW )
+        GL.glBufferData( GL.GL_ARRAY_BUFFER, self.big_buff.nbytes, self.big_buff, GL.GL_STATIC_DRAW )
 
         ebo = GL.glGenBuffers( 1 )
         GL.glBindBuffer( GL.GL_ELEMENT_ARRAY_BUFFER, ebo )
-        GL.glBufferData( GL.GL_ELEMENT_ARRAY_BUFFER, self.indexes.nbytes, self.indexes.ravel(), GL.GL_STATIC_DRAW )
+        GL.glBufferData( GL.GL_ELEMENT_ARRAY_BUFFER, self.indexes.nbytes, self.indexes, GL.GL_STATIC_DRAW )
 
     def _qglShader( self ):
 
         self.shader = QtGui.QOpenGLShaderProgram( self.context() )
 
-        self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, Shaders.vtx2_src  )
+        self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, Shaders.vtx3_src  )
         self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Fragment, Shaders.frg2_src )
 
         program_attrs = ("position", "colour")
@@ -129,6 +184,8 @@ class GLWidget( QtWidgets.QOpenGLWidget ):
                                       self.bb_ln_sz,
                                       ctypes.c_void_p( stride ) )
 
+        self.rot_loc = self.shader.uniformLocation( "rotation" )
+
     # Qt funcs -------------------------------------------------------
     def minimumSizeHint(self):
         return QtCore.QSize( 50, 50 )
@@ -146,11 +203,21 @@ class GLWidget( QtWidgets.QOpenGLWidget ):
         # misc
         GL.glHint( GL.GL_POINT_SMOOTH_HINT, GL.GL_NICEST )
         GL.glEnable( GL.GL_POINT_SMOOTH )
+        GL.glEnable( GL.GL_DEPTH_TEST )
         GL.glClearColor( *self.bgcolor )
 
+        # ticks for redraws
+        self.timer = QtCore.QTimer()
+        self.timer.timeout.connect( self.update )
+        self.timer.start( 16 )
+
     def paintGL( self ):
-        GL.glClear( GL.GL_COLOR_BUFFER_BIT )
-        GL.glRotate( self.rot, 0.0, 0.0, 1.0 )
+        # guard against early drawing
+        if( self.rot_loc is None ):
+            pass
+
+        GL.glClear( GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT )
+
         hw, hh = int(self.wh[0] / 2), int(self.wh[1] / 2)
 
         # view1
@@ -163,14 +230,16 @@ class GLWidget( QtWidgets.QOpenGLWidget ):
 
         # view3
         GL.glViewport( 0, hh, hw, hh )
+        rot_x = Math3D.genRotMat( "X", self.rot, degrees=True )
+        rot_y = Math3D.genRotMat( "Y", self.rot+90, degrees=True )
+
+        GL.glUniformMatrix4fv( self.rot_loc, 1, GL.GL_TRUE, np.dot( rot_y, rot_x ) )
         GL.glDrawElements( GL.GL_TRIANGLES, len(self.indexes), GL.GL_UNSIGNED_SHORT, ctypes.c_void_p( 0 ) )
 
         # view4 - try out some points
         GL.glViewport( hw, hh, hw, hh )
         GL.glPointSize( 12 )
         GL.glDrawArrays( GL.GL_POINTS, 0, len(self.big_buff) )
-
-
 
         self.rot += 1.0
 
