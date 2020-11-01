@@ -27,10 +27,10 @@ class Shaders( object ):
     dot_frg_src = """
     # version 330 core
 
-    out vec4 colour ;
+    out vec4 color ;
 
     void main() {
-        colour = vec4( 0.0, 1.0, 0.0, 1.0 ) ;
+        color = vec4( 0.0, 1.0, 0.0, 1.0 ) ;
     }
     """
 
@@ -68,12 +68,13 @@ class QGLCameraView( QtWidgets.QOpenGLWidget ):
               [ 0.0,-1.0], [ 0.0, -0.95],
               [ 0.0, 1.0], [ 0.0,  0.95 ],
             ], dtype=np.float32 ) # 16 Elems, 128 Bytes
+        self._reticule *= 0.99 # just smaller than NDC limits?
         self.vbo = None
         self.has_data = False
 
     def acceptNewData( self, dets, strides, ids ):
         my_dets = np.asarray( dets[:,:2], dtype=np.float32 ) # ignore r for now
-        self.stride_list = np.asarray( strides, dtype=np.integer )
+        self.stride_list = np.asarray( strides, dtype=np.int32 )
         packed_data = np.concatenate( (self._reticule, my_dets) )
 
         # load to VBO
@@ -94,17 +95,22 @@ class QGLCameraView( QtWidgets.QOpenGLWidget ):
         self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Fragment, Shaders.dot_frg_src )
 
         self.shader_attr_locs[ "position" ] = 0
+        GL.glEnableVertexAttribArray( self.shader_attr_locs[ "position" ] )
         GL.glBindAttribLocation( self.shader.programId(), self.shader_attr_locs[ "position" ], "position" )
 
         self.shader.link()
         self.shader.bind()
 
-        # configure Attrib
-        GL.glVertexAttribPointer( 0, 2, GL.GL_FLOAT, GL.GL_FALSE, 0, ctypes.c_void_p( 0 ) )
-
         # Get a buffer
         self.vbo = GL.glGenBuffers( 1 )
         GL.glBindBuffer( GL.GL_ARRAY_BUFFER, self.vbo )
+
+        # configure Attrib
+        GL.glVertexAttribPointer( 0, 2, GL.GL_FLOAT, GL.GL_FALSE, 0, ctypes.c_void_p( 0 ) )
+
+        # Misc
+        GL.glHint( GL.GL_POINT_SMOOTH_HINT, GL.GL_NICEST )
+
 
     def resizeGL( self, width, height ):
         self._wh = ( width, height )
@@ -118,7 +124,7 @@ class QGLCameraView( QtWidgets.QOpenGLWidget ):
         """ Draw the cameras """
         if( not self.has_data ):
             return
-        
+
         # clear
         GL.glClear( GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT )
 
@@ -127,10 +133,12 @@ class QGLCameraView( QtWidgets.QOpenGLWidget ):
         hw = int( w / 2 )
         height = self._wh[1]
 
-        # get the right buffer ? 0 - guess not
+        # get the right buffer ? - guess not
         #GL.glBindBuffer( GL.GL_ARRAY_BUFFER, self.vbo )
+
         # set dot size
-        GL.glPointSize( 4 )
+        GL.glPointSize( 2 )
+        GL.glEnable( GL.GL_POINT_SMOOTH )
 
         cam_idx = 0 # NOT cam Number, idx in cam_list
         for r in range( rows-1, -1, -1 ):
@@ -138,19 +146,23 @@ class QGLCameraView( QtWidgets.QOpenGLWidget ):
                 x, y =  c*w, r*h
 
                 # setup an Orthogonal Projection
+                # Todo: correct aspect ratio
                 GL.glViewport( x, y, w, h )
 
-                # ToDo: draw an image - texture on a quad in BG?
+                # ToDo: Far in the future draw an image - texture on a quad in BG?
 
                 # Draw Roids
                 sin, sout = self._strider[ cam_idx ]
-                idx_in, idx_out = self.stride_list[ sin ]+16, self.stride_list[ sout ]+16
-                GL.glDrawArrays( GL.GL_POINTS, idx_in, idx_out )
+                idx_in = self.stride_list[ sin ] + 16 # Offset from start of reticule
+                num_dets = sout - sin
+                if( num_dets > 0 ):
+                    GL.glDrawArrays( GL.GL_POINTS, idx_in, num_dets )
 
                 # Draw reticule
-                #GL.glDrawArrays( GL.GL_LINES, 0, 16 ) # Size of reticule
+                GL.glDrawArrays( GL.GL_LINES, 0, 16 )
 
-                self.hudText( x+hw-50, height-y-5, "Camera {}".format( cam_idx ) )
+                # Kills redrawws?
+                #self.hudText( x+hw-45, height-y-5, "Camera {}".format( cam_idx+1 ) )
 
                 # Done?
                 cam_idx += 1
