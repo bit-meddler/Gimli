@@ -125,6 +125,14 @@ class QGLCameraView( QtWidgets.QOpenGLWidget ):
         if( not self.has_data ):
             return
 
+        # Enable a painter, but switch to Native Painting immediatly
+        # painter = QtGui.QPainter( self )
+        # painter.setPen( QtCore.Qt.green )
+        # painter.setFont( QtGui.QFont( "Helvetica", 8 ) )
+        # painter.setRenderHints( QtGui.QPainter.Antialiasing | QtGui.QPainter.TextAntialiasing )
+        # painter.begin( self )
+        # painter.beginNativePainting()
+
         # clear
         GL.glClear( GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT )
 
@@ -132,7 +140,7 @@ class QGLCameraView( QtWidgets.QOpenGLWidget ):
         w, h = self._subwindow_sz
         hw = int( w / 2 )
         height = self._wh[1]
-
+        overlays = []
         # get the right buffer ? - guess not
         #GL.glBindBuffer( GL.GL_ARRAY_BUFFER, self.vbo )
 
@@ -149,12 +157,14 @@ class QGLCameraView( QtWidgets.QOpenGLWidget ):
                 # Todo: correct aspect ratio
                 GL.glViewport( x, y, w, h )
 
-                # ToDo: Far in the future draw an image - texture on a quad in BG?
+                # ToDo: Far in the future, draw an image - texture on a quad in BG?
 
                 # Draw Roids
                 sin, sout = self._strider[ cam_idx ]
-                idx_in = self.stride_list[ sin ] + 16 # Offset from start of reticule
-                num_dets = sout - sin
+                idx_in    = self.stride_list[ sin ]
+                num_dets  = self.stride_list[ sout ] - idx_in
+                idx_in += 16 # Skip reticlue
+
                 if( num_dets > 0 ):
                     GL.glDrawArrays( GL.GL_POINTS, idx_in, num_dets )
 
@@ -162,20 +172,18 @@ class QGLCameraView( QtWidgets.QOpenGLWidget ):
                 GL.glDrawArrays( GL.GL_LINES, 0, 16 )
 
                 # Kills redrawws?
-                #self.hudText( x+hw-45, height-y-5, "Camera {}".format( cam_idx+1 ) )
+                overlays.append( ( x+hw-45, height-y-5, "Camera {}".format( cam_idx+1 ) ) )
 
                 # Done?
                 cam_idx += 1
                 if( cam_idx >= self.num_cams ):
                     break
 
-    def hudText( self, x, y, text ):
-        painter = QtGui.QPainter( self )
-        painter.setPen( QtCore.Qt.green )
-        painter.setFont( QtGui.QFont( "Helvetica", 8 ) )
-        painter.setRenderHints( QtGui.QPainter.Antialiasing | QtGui.QPainter.TextAntialiasing )
-        painter.drawText( x, y, text )
-        painter.end()
+        # # Draw overlay text
+        # painter.endNativePainting()
+        # for x, y, text in overlays:
+        #     painter.drawText( x, y, text )
+        # painter.end()
 
     def _camFromXY( self, x, y ):
         rows, _ = self._rc
