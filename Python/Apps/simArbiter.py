@@ -133,6 +133,7 @@ class Arbiter( object ):
 
         # repack each frame
         self.num_frames = len( cams[0] )
+        empties = 0
         for i in range( self.num_frames ):
             frame = []
             split = [0]
@@ -146,10 +147,14 @@ class Arbiter( object ):
             np_split = np.array( split, dtype=np.int )
 
             # Convert to NDC (should be done in DetMan / SysMan)
-            np_frame[:2] /= 512.0
-            np_frame[:2] -= 1.
+            try:
+                np_frame[:,:2] /= 512.0
+                np_frame[:,:2] -= 1.
+            except:
+                empties += 1
             self.frames.append( np_frame )
             self.splits.append( np_split )
+        print( "{} Empty frames".format( empties ) )
 
     def handleCNC( self, dgm ):
         # currently just cameras

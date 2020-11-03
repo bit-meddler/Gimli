@@ -33,7 +33,7 @@ from GUI.editors.dockingMasks      import QDockingRegions
 from GUI.editors.dockingOutliner   import QDockingOutliner
 
 from GUI.glViewers.viewerCameras import QGLCameraView
-from GUI.glViewers.viewer3D      import QGLView
+#from GUI.glViewers.viewer3D      import QGLView
 
 
 class QMain( QtWidgets.QMainWindow ):
@@ -141,8 +141,8 @@ class QMain( QtWidgets.QMainWindow ):
         self.splash.finish( self )
 
         # start the det recever
-        self.dets_listen.start()
         self.logNreport( "Started Centroid receiver", 5000 )
+        self.dets_listen.start()
 
     def _getPrefDims( self ):
         """ Get prefered screen dimentions and prefered screen.
@@ -186,9 +186,12 @@ class QMain( QtWidgets.QMainWindow ):
         for i in range( num_cams ):
             roid_count[ i ] = strides[ i + 1 ] - strides[ i ]
         self.cam_mon.roid_count_list = roid_count
+
+        # update watchers
         self.cam_mon.updateRoidCount()
         if (self.packet_count % 10 == 0):
             log.info( "Got centroids @{:3.2f} fps: {}".format( det_fps, roid_count ) )
+        self.cam_view.acceptNewData( self.dets_dets, strides, None )
 
     def sendCNC( self, verb, noun, value=None ):
         tgt_list = list( map( lambda x: x.id, self.selection_que ) )
@@ -281,8 +284,12 @@ class QMain( QtWidgets.QMainWindow ):
         self._buildToolbar()
 
         # Central Widget
-        self._ctx = QGLView()
-        self.setCentralWidget( self._ctx )
+        #self.cam_view = QGLView()
+        self.cam_view = QGLCameraView()
+        self.setCentralWidget( self.cam_view )
+        # DANGER another dumb hack
+        self.cam_view.cam_list = [ x for x in range(10) ]
+        self.cam_view._camlistChanged()
 
         # Add docables
         self.splash.showMessage( "Creating Dockable Editors" )
