@@ -254,8 +254,8 @@ class GLWidget( QtWidgets.QOpenGLWidget ):
         # setup camera matrixes
         self.model = np.eye( 4, dtype=np.float32 )
         self.view  = np.eye( 4, dtype=np.float32 )
-        self.projection = np.eye( 4, dtype=np.float32 )
         self.view[:3,3] = [0., 0., -.4]
+        self.projection = np.eye( 4, dtype=np.float32 )
 
         # assemble a projection
         w, h = self.wh
@@ -283,10 +283,14 @@ class GLWidget( QtWidgets.QOpenGLWidget ):
         rot_x = Math3D.genRotMat( "X", self.rot, degrees=True )
         rot_y = Math3D.genRotMat( "Y", self.rot+90, degrees=True )
 
+        self.model = np.dot( np.dot( rot_x, rot_x ), self.model )
+
         self.shader.bind()
-        GL.glUniformMatrix4fv( self.xform_loc, 1, GL.GL_TRUE, np.dot( rot_y, rot_x ) )
+
+        GL.glUniformMatrix4fv( self.model_loc, 1, GL.GL_TRUE, self.model )
 
         GL.glDrawElements( GL.GL_TRIANGLES, self.num_idx, GL.GL_UNSIGNED_SHORT, ctypes.c_void_p( 0 ) )
+
         self.shader.release()
         self.rot += 1.0
 
