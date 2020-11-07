@@ -2,10 +2,12 @@ import ctypes
 import sys
 import numpy as np
 
+import cv2
+
 from PySide2 import QtCore, QtGui, QtWidgets
 
 from OpenGL import GL
-from OpenGL.GL.shaders import compileShader, compileProgram
+
 
 class OGLWindow( QtWidgets.QWidget ):
 
@@ -21,62 +23,38 @@ class OGLWindow( QtWidgets.QWidget ):
 
 class Shaders( object ):
     vtx_src = """
-    # version 330 core
+        # version 330
 
-    in vec3 position ;
+        layout( location=0 ) in vec3 a_position ;
+        layout( location=1 ) in vec3 a_colour ;
+        layout( location=2 ) in vec2 a_uvCoord ;
 
-    void main() {
-        gl_Position = vec4( position, 1.0 ) ;
-    }
+        out vec3 v_colour ;
+        out vec2 v_uvCoord ;
+
+        uniform mat4 u_rotation ;
+
+        void main() {
+            gl_Position = u_rotation * vec4( a_position, 1.0f ) ;
+            v_colour = a_colour ;
+            v_uvCoord = a_uvCoord ;
+
+        }
     """
+ 
     frg_src = """
-    # version 330 core
+        # version 330
 
-    out vec4 colour ;
+        in vec3 v_colour ;
+        in vec2 v_uvCoord ;
 
-    void main() {
-        colour = vec4( 1.0, 0.0, 0.0, 1.0 ) ;
-    }
-    """
+        out vec4 outColor ;
+        uniform sampler2D s_texture ;
 
-    vtx2_src = """
-    # version 330 core
-
-    layout( location=0 ) in vec3 position ;
-    layout( location=1 ) in vec3 colour ;
-
-    out vec3 fcolour ;
-
-    void main() {
-        fcolour = colour ;
-        gl_Position = vec4( position, 1.0 ) ;
-    }
-    """
-    frg2_src = """
-    # version 330 core
-
-    in  vec3 fcolour ;
-
-    out vec4 colour ;
-
-    void main() {
-        colour = vec4( fcolour, 1.0 ) ;
-    }
-    """
-    vtx3_src = """
-    # version 330 core
-
-    layout( location=0 ) in vec3 position ;
-    layout( location=1 ) in vec3 colour ;
-
-    uniform mat4 rotation ;
-
-    out vec3 fcolour ;
-
-    void main() {
-        fcolour = colour ;
-        gl_Position = rotation * vec4( position, 1.0 ) ;
-    }
+        void main() {
+          // outColor = texture( s_texture, v_uvCoord ) ; // * vec4( v_colour, 1.0f ) ;
+          outColor = vec4( v_colour, 1.0 ) ;
+        }
     """
 
 
@@ -123,50 +101,91 @@ class GLWidget( QtWidgets.QOpenGLWidget ):
         self.rot_loc = None
 
     def _prepareResources( self ):
-        # the item
-        self.big_buff = np.asarray( [
-            #  X     Y     Z    R    G    B
-            [ -0.5, -0.5,  0.5, 1.0, 0.0, 0.0 ],
-            [  0.5, -0.5,  0.5, 0.0, 1.0, 0.0 ],
-            [  0.5,  0.5,  0.5, 0.0, 0.0, 1.0 ],
-            [ -0.5,  0.5,  0.5, 1.0, 1.0, 0.0 ],
-            
-            [ -0.5, -0.5, -0.5, 1.0, 0.0, 0.0 ],
-            [  0.5, -0.5, -0.5, 0.0, 1.0, 0.0 ],
-            [  0.5,  0.5, -0.5, 0.0, 0.0, 1.0 ],
-            [ -0.5,  0.5, -0.5, 1.0, 1.0, 0.0 ],
-            
-            ], dtype=np.float32 )
+        #        positions         colors          texture coords
+        cube = [-0.5, -0.5, 0.5,   1.0, 0.0, 0.0,  0.0, 0.0,
+                 0.5, -0.5, 0.5,   0.0, 1.0, 0.0,  1.0, 0.0,
+                 0.5,  0.5, 0.5,   0.0, 0.0, 1.0,  1.0, 1.0,
+                -0.5,  0.5, 0.5,   1.0, 1.0, 1.0,  0.0, 1.0,
+     
+                -0.5, -0.5, -0.5,  1.0, 0.0, 0.0,  0.0, 0.0,
+                 0.5, -0.5, -0.5,  0.0, 1.0, 0.0,  1.0, 0.0,
+                 0.5,  0.5, -0.5,  0.0, 0.0, 1.0,  1.0, 1.0,
+                -0.5,  0.5, -0.5,  1.0, 1.0, 1.0,  0.0, 1.0,
+     
+                 0.5, -0.5, -0.5,  1.0, 0.0, 0.0,  0.0, 0.0,
+                 0.5,  0.5, -0.5,  0.0, 1.0, 0.0,  1.0, 0.0,
+                 0.5,  0.5,  0.5,  0.0, 0.0, 1.0,  1.0, 1.0,
+                 0.5, -0.5,  0.5,  1.0, 1.0, 1.0,  0.0, 1.0,
+     
+                -0.5,  0.5, -0.5,  1.0, 0.0, 0.0,  0.0, 0.0,
+                -0.5, -0.5, -0.5,  0.0, 1.0, 0.0,  1.0, 0.0,
+                -0.5, -0.5,  0.5,  0.0, 0.0, 1.0,  1.0, 1.0,
+                -0.5,  0.5,  0.5,  1.0, 1.0, 1.0,  0.0, 1.0,
+     
+                -0.5, -0.5, -0.5,  1.0, 0.0, 0.0,  0.0, 0.0,
+                 0.5, -0.5, -0.5,  0.0, 1.0, 0.0,  1.0, 0.0,
+                 0.5, -0.5,  0.5,  0.0, 0.0, 1.0,  1.0, 1.0,
+                -0.5, -0.5,  0.5,  1.0, 1.0, 1.0,  0.0, 1.0,
+     
+                 0.5,  0.5, -0.5,  1.0, 0.0, 0.0,  0.0, 0.0,
+                -0.5,  0.5, -0.5,  0.0, 1.0, 0.0,  1.0, 0.0,
+                -0.5,  0.5,  0.5,  0.0, 0.0, 1.0,  1.0, 1.0,
+                 0.5,  0.5,  0.5,  1.0, 1.0, 1.0,  0.0, 1.0,
+        ]
+        cube = np.array( cube, dtype=np.float32 )
 
-        self.bb_ln_sz = self.big_buff[0,:].nbytes
-        self.bb_strides = [ 0, self.big_buff[0,:3].nbytes ]
+        self.stride_data = [ [3, 0], [3, 3*cube.itemsize], [2, 6*cube.itemsize] ]
+        self.line_sz = 8 * cube.itemsize
+ 
+        indices = [
+             0,  1,  2,  2,  3,  0,
+             4,  5,  6,  6,  7,  4,
+             8,  9, 10, 10, 11,  8,
+            12, 13, 14, 14, 15, 12,
+            16, 17, 18, 18, 19, 16,
+            20, 21, 22, 22, 23, 20,
+        ]
+        indices = np.array( indices, dtype=np.uint16 )
 
-        self.indexes = np.asarray(
-            [ 0, 1, 2,  2, 3, 0,
-              4, 5, 6,  6, 7, 4,
-              4, 5, 1,  1, 0, 4,
-              6, 7, 3,  3, 2, 6,
-              5, 6, 2,  2, 1, 5,
-              7, 4, 0,  0, 3, 7,
-            ], dtype=np.uint16 )
+        self.num_idx = len( indices )
 
         # VBO
         vbo = GL.glGenBuffers( 1 )
         GL.glBindBuffer( GL.GL_ARRAY_BUFFER, vbo )
-        GL.glBufferData( GL.GL_ARRAY_BUFFER, self.big_buff.nbytes, self.big_buff, GL.GL_STATIC_DRAW )
+        GL.glBufferData( GL.GL_ARRAY_BUFFER, cube.nbytes, cube, GL.GL_STATIC_DRAW )
 
         ebo = GL.glGenBuffers( 1 )
         GL.glBindBuffer( GL.GL_ELEMENT_ARRAY_BUFFER, ebo )
-        GL.glBufferData( GL.GL_ELEMENT_ARRAY_BUFFER, self.indexes.nbytes, self.indexes, GL.GL_STATIC_DRAW )
+        GL.glBufferData( GL.GL_ELEMENT_ARRAY_BUFFER, indices.nbytes, indices, GL.GL_STATIC_DRAW )
+
+        # load and setup texture
+        texture = GL.glGenTextures( 1 )
+        GL.glBindTexture( GL.GL_TEXTURE_2D, texture )
+
+
+        img = cv2.imread( "wood.jpg" , cv2.IMREAD_COLOR )
+        rgb_img = cv2.cvtColor( img, cv2.COLOR_BGR2RGB )
+        i_h, i_w, _ = img.shape
+        
+        GL.glTexImage2D( GL.GL_TEXTURE_2D, 0, GL.GL_RGB, i_w, i_h, 0, GL.GL_RGB, GL.GL_UNSIGNED_BYTE, rgb_img )
+
+        # Set the texture wrapping parameters
+        GL.glTexParameteri( GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_S, GL.GL_CLAMP_TO_EDGE )
+        GL.glTexParameteri( GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_T, GL.GL_CLAMP_TO_EDGE )
+
+        # Set texture filtering parameters
+        GL.glTexParameteri( GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR )
+        GL.glTexParameteri( GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR )
+
 
     def _qglShader( self ):
 
         self.shader = QtGui.QOpenGLShaderProgram( self.context() )
 
-        self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, Shaders.vtx3_src  )
-        self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Fragment, Shaders.frg2_src )
+        self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, Shaders.vtx_src  )
+        self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Fragment, Shaders.frg_src )
 
-        program_attrs = ("position", "colour")
+        program_attrs = ( "a_position", "a_colour", "a_uvCoord" )
 
         for i, name in enumerate( program_attrs ):
             self.shader_attr_locs[ name ] = i
@@ -175,16 +194,17 @@ class GLWidget( QtWidgets.QOpenGLWidget ):
         self.shader.link()
         self.shader.bind()
 
-        for name, stride in zip( program_attrs, self.bb_strides ):
+        for name, (num, offset) in zip( program_attrs, self.stride_data ):
             GL.glEnableVertexAttribArray( self.shader_attr_locs[ name ] )
             GL.glVertexAttribPointer( self.shader_attr_locs[ name ],
-                                      3,
+                                      num,
                                       GL.GL_FLOAT,
                                       GL.GL_FALSE,
-                                      self.bb_ln_sz,
-                                      ctypes.c_void_p( stride ) )
+                                      self.line_sz,
+                                      ctypes.c_void_p( offset ) )
 
-        self.rot_loc = self.shader.uniformLocation( "rotation" )
+        self.rot_loc = self.shader.uniformLocation( "u_rotation" )
+
 
     # Qt funcs -------------------------------------------------------
     def minimumSizeHint(self):
@@ -196,6 +216,7 @@ class GLWidget( QtWidgets.QOpenGLWidget ):
 
     # gl funs --------------------------------------------------------
     def initializeGL( self ):
+        GL.glEnable( GL.GL_TEXTURE_2D )
         # buffers
         self._prepareResources()
         # shaders
@@ -204,12 +225,16 @@ class GLWidget( QtWidgets.QOpenGLWidget ):
         GL.glHint( GL.GL_POINT_SMOOTH_HINT, GL.GL_NICEST )
         GL.glEnable( GL.GL_POINT_SMOOTH )
         GL.glEnable( GL.GL_DEPTH_TEST )
+        #GL.glEnable( GL.GL_CULL_FACE )
+
+        GL.glEnable( GL.GL_BLEND )
+        GL.glBlendFunc( GL.GL_SRC_ALPHA, GL.GL_ONE_MINUS_SRC_ALPHA )
         GL.glClearColor( *self.bgcolor )
 
         # ticks for redraws
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect( self.update )
-        self.timer.start( 16 )
+        self.timer.start( 16 ) # approx 60fps
 
     def paintGL( self ):
         # guard against early drawing
@@ -218,28 +243,15 @@ class GLWidget( QtWidgets.QOpenGLWidget ):
 
         GL.glClear( GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT )
 
-        hw, hh = int(self.wh[0] / 2), int(self.wh[1] / 2)
+        GL.glViewport( 0, 0, self.wh[0], self.wh[1] )
 
-        # view1
-        GL.glViewport( 0, 0, hw, hh )
-        GL.glDrawArrays( GL.GL_TRIANGLE_STRIP, 0, 4 )
-
-        # view2
-        GL.glViewport( hw, 0, hw, hh )
-        GL.glDrawArrays( GL.GL_LINE_LOOP, 0, len(self.big_buff) )
-
-        # view3
-        GL.glViewport( 0, hh, hw, hh )
         rot_x = Math3D.genRotMat( "X", self.rot, degrees=True )
-        rot_y = Math3D.genRotMat( "Y", self.rot+90, degrees=True )
+        #rot_y = Math3D.genRotMat( "Y", self.rot+90, degrees=True )
+        stat_y= Math3D.genRotMat( "Y", 17.5, degrees=True )
 
-        GL.glUniformMatrix4fv( self.rot_loc, 1, GL.GL_TRUE, np.dot( rot_y, rot_x ) )
-        GL.glDrawElements( GL.GL_TRIANGLES, len(self.indexes), GL.GL_UNSIGNED_SHORT, ctypes.c_void_p( 0 ) )
+        GL.glUniformMatrix4fv( self.rot_loc, 1, GL.GL_TRUE, np.dot( stat_y, rot_x ) )
 
-        # view4 - try out some points
-        GL.glViewport( hw, hh, hw, hh )
-        GL.glPointSize( 12 )
-        GL.glDrawArrays( GL.GL_POINTS, 0, len(self.big_buff) )
+        GL.glDrawElements( GL.GL_TRIANGLES, self.num_idx, GL.GL_UNSIGNED_SHORT, ctypes.c_void_p( 0 ) )
 
         self.rot += 1.0
 
