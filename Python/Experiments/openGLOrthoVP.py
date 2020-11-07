@@ -32,13 +32,12 @@ class Shaders( object ):
         out vec3 colour ;
         out vec2 uvCoord ;
 
-        uniform mat4 u_transform ;
         uniform mat4 u_model ;
         uniform mat4 u_view ;
         uniform mat4 u_projection ;
 
         void main() {
-            gl_Position = u_projection * u_view * u_model * u_transform * vec4( a_position, 1.0f ) ;
+            gl_Position = u_projection * u_view * u_model * vec4( a_position, 1.0f ) ;
             colour = a_colour ;
             uvCoord = a_uvCoord ;
 
@@ -59,6 +58,7 @@ class Shaders( object ):
           outColor = vec4( colour, 1.0 ) ;
         }
     """
+
 
 class Math3D( object ):
 
@@ -90,20 +90,40 @@ class Math3D( object ):
 
     @staticmethod
     def genPerspProjectionFrust( h_fov, aspect, near_clip, far_clip ):
-        ymax = near_clip * np.tan( np.deg2rad(h_fov) )
+        ymax = near_clip * np.tan( np.deg2rad( h_fov ) / 2.0 )
         xmax = ymax * aspect
         return Math3D.genPerspProjectionPlaines( -xmax, xmax, -ymax, ymax, near_clip, far_clip )
 
     @staticmethod
-    def genPerspProjectionPlaines( left, right, bottom, top, near, far ):
+    def genPerspProjectionPlaines( left, right, base, top, near, far ):
+        rml = right - left
+        tmb = top - base
+        fmn = far - near
+        tnr = 2.0 * near
         return np.array((
-            (      2.0 * near / (right - left),                              0.0,                              0.0,  0.0 ),
-            (                              0.0,      2.0 * near / (top - bottom),                              0.0,  0.0 ),
-            (  (right + left) / (right - left),  (top + bottom) / (top - bottom),     -(far + near) / (far - near), -1.0 ),
-            (                              0.0,                              0.0, -2.0 * far * near / (far - near),  0.0 ),
+            ( tnr / rml,       0.0, (right + left) / rml,              0.0 ),
+            (       0.0, tnr / tmb,   (top + base) / tmb,              0.0 ),
+            (       0.0,       0.0,  -(far + near) / fmn, -far * tnr / fmn ),
+            (       0.0,       0.0,                 -1.0,              0.0 ),
         ), dtype=np.float32 )
 
+    @staticmethod
+    def genOrthoProjectionPlains( left, right, base, top, near, far ):
+        rml = right - left
+        tmb = top - base
+        fmn = far - near
+        return np.array((
+            ( 2.0 / rml,       0.0,        0.0, -(right + left) / rml ),
+            (       0.0, 2.0 / tmb,        0.0,   -(top + base) / tmb ),
+            (       0.0,       0.0, -2.0 / fmn,   -(far - near) / fmn ),
+            (       0.0,       0.0,        0.0,                   1.0 ),
+        ), dtype=np.float32 )
+
+
 class GLWidget( QtWidgets.QOpenGLWidget ):
+
+    DEFAULT_ZOOM = 1.05
+    TRUCK_SCALE  = 0.01
 
     def __init__( self, parent=None ):
         super( GLWidget, self ).__init__( parent )
@@ -112,6 +132,21 @@ class GLWidget( QtWidgets.QOpenGLWidget ):
 
         # canvas size
         self.wh = ( self.geometry().width(), self.geometry().height() )
+
+        # Persp Camera Setup
+        self.fov = 45.0
+        self.clip_nr = -100.0#0.1
+        self.clip_far = 100.0
+
+        # Ortho Camera Setup
+        self._zoom = 1.0
+        self._ortho_width = 2.0
+        self._locus = [ 1.0, 0.0 ]
+
+        # internals for camera movement
+        self._panning = False
+        self._zooming = False
+        self._move_start = None
 
         # something to move it
         self.rot = 1.0
@@ -177,23 +212,7 @@ class GLWidget( QtWidgets.QOpenGLWidget ):
         GL.glBindBuffer( GL.GL_ELEMENT_ARRAY_BUFFER, ebo )
         GL.glBufferData( GL.GL_ELEMENT_ARRAY_BUFFER, indices.nbytes, indices, GL.GL_STATIC_DRAW )
 
-        # load and setup texture
-        texture = GL.glGenTextures( 1 )
-        GL.glBindTexture( GL.GL_TEXTURE_2D, texture )
-
-        # Set the texture wrapping parameters
-        GL.glTexParameteri( GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_S, GL.GL_REPEAT )
-        GL.glTexParameteri( GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_T, GL.GL_REPEAT )
-
-        # Set texture filtering parameters
-        GL.glTexParameteri( GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR )
-        GL.glTexParameteri( GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR )
-
-        img = cv2.imread( "wood.jpg" , cv2.IMREAD_COLOR )
-        i_h, i_w, _ = img.shape
-
-        GL.glTexImage2D( GL.GL_TEXTURE_2D, 0, GL.GL_RGB, i_w, i_h, 0, GL.GL_RGB, GL.GL_UNSIGNED_BYTE, img )
-        GL.glEnable( GL.GL_TEXTURE_2D )
+        # textures have been abandoned, don't know why they won't work
 
     def _qglShader( self ):
 
@@ -220,21 +239,139 @@ class GLWidget( QtWidgets.QOpenGLWidget ):
                                       self.line_sz,
                                       ctypes.c_void_p( offset ) )
 
-        self.xform_loc = self.shader.uniformLocation( "u_transform" )
         self.model_loc = self.shader.uniformLocation( "u_model" )
         self.view_loc  = self.shader.uniformLocation( "u_view" )
         self.proj_loc  = self.shader.uniformLocation( "u_projection" )
         self.shader.release()
 
+    def updateProjection( self, width=None, height=None ):
+        width = width or self.wh[0]
+        height = height or self.wh[1]
+        aspect = width / height
+
+        # assemble a projection
+        #self.projection = Math3D.genPerspProjectionFrust( self.fov, aspect, self.clip_nr, self.clip_far )
+
+        orig_x, orig_y = self._locus
+        span = self._ortho_width * self._zoom
+        extent = span / aspect
+
+        o_l = orig_x + span
+        o_r = orig_x - span
+        o_t = orig_y + extent
+        o_b = orig_y - extent
+
+        self.projection = Math3D.genOrthoProjectionPlains( o_l, o_r, o_b, o_t, self.clip_nr, self.clip_far )
+
+        # upload to uniform
+        self.shader.bind()
+        GL.glUniformMatrix4fv( self.proj_loc,  1, GL.GL_TRUE, self.projection )
+        self.shader.release()
+        
+        self.update()
+
+    def reportMats( self ):
+        print( "Projection\n", self.projection )
+        print( "View\n", self.view )
+        print( "Model\n", self.model )
+
+
     # Qt funcs -------------------------------------------------------
-    def minimumSizeHint(self):
+    def minimumSizeHint( self ):
         return QtCore.QSize( 50, 50 )
 
-    def sizeHint(self):
+    def sizeHint( self ):
         return QtCore.QSize( 400, 400 )
 
+    def wheelEvent( self, event ):
+        wheel_delta = event.angleDelta().y()
+        wheel_delta /= 100.
 
-    # gl funs --------------------------------------------------------
+        if( wheel_delta > 0.0 ):
+            self._zoom *= self.DEFAULT_ZOOM
+
+        elif( wheel_delta < 0.0 ):
+            self._zoom /= self.DEFAULT_ZOOM
+
+        self.updateProjection()
+
+    def mousePressEvent( self, event ):
+        buttons = event.buttons()
+        mods = event.modifiers()
+
+        pressed_left  = bool( buttons & QtCore.Qt.LeftButton   )
+        pressed_right = bool( buttons & QtCore.Qt.RightButton  )
+        pressed_mid   = bool( buttons & QtCore.Qt.MiddleButton )
+        pressed_alt   = bool( mods    & QtCore.Qt.AltModifier  )
+
+        if( (pressed_left and pressed_right) or pressed_mid ):
+            # trucking
+            self._panning = True
+            self._move_start = event.pos()
+
+        elif( pressed_right ):
+            # Zooming
+            self._zooming = True
+            self._move_start = event.pos()
+
+    def mouseReleaseEvent( self, event ):
+        super( GLWidget, self ).mouseReleaseEvent( event )
+        
+        update_camera = False
+
+        if( self._panning ):
+            # complete the pan
+            update_camera = True
+            self._panning = False
+
+        elif( self._zooming ):
+            # complete the Zoom
+            update_camera = True
+            self._zooming = False
+
+        if( update_camera ):
+            self.updateProjection()
+
+    def mouseMoveEvent( self, event ):
+        update_camera = False
+
+        if( self._panning or self._zooming ):
+            # get the positional delta
+            hz = event.x() - self._move_start.x() 
+            vt = event.y() - self._move_start.y()
+            self._move_start = event.pos()
+
+
+        if( self._panning ):
+            self._locus[0] += (hz * self._zoom) * self.TRUCK_SCALE
+            self._locus[1] += (vt * self._zoom) * self.TRUCK_SCALE
+
+            update_camera = True
+
+
+        elif( self._zooming ):
+            if( vt > 0.0 ):
+                self._zoom *= self.DEFAULT_ZOOM
+            elif( vt < 0.0 ):
+                self._zoom /= self.DEFAULT_ZOOM
+
+            update_camera = True
+
+
+        if( update_camera ):
+            self.updateProjection()
+
+    def mouseDoubleClickEvent( self, event ):
+        if( event.modifiers() & QtCore.Qt.AltModifier ):
+            # Alt Double Click resets the camera
+            self._zoom = 1.0
+            self._ortho_width = 2.0
+            self._locus = [ 0.0, 0.0 ]
+
+            self.updateProjection()
+
+
+    # gl funcs --------------------------------------------------------
     def initializeGL( self ):
         # buffers
         self._prepareResources()
@@ -243,7 +380,7 @@ class GLWidget( QtWidgets.QOpenGLWidget ):
         # misc
         GL.glHint( GL.GL_POINT_SMOOTH_HINT, GL.GL_NICEST )
         GL.glEnable( GL.GL_POINT_SMOOTH )
-        #GL.glEnable( GL.GL_DEPTH_TEST )
+        GL.glEnable( GL.GL_DEPTH_TEST )
         GL.glClearColor( *self.bgcolor )
 
         # ticks for redraws
@@ -251,24 +388,28 @@ class GLWidget( QtWidgets.QOpenGLWidget ):
         self.timer.timeout.connect( self.update )
         self.timer.start( 16 )
 
-        # setup camera matrixes
+        # setup camera / world matrices
         self.model = np.eye( 4, dtype=np.float32 )
         self.view  = np.eye( 4, dtype=np.float32 )
-        self.view[:3,3] = [0., 0., -.4]
         self.projection = np.eye( 4, dtype=np.float32 )
 
-        # assemble a projection
-        w, h = self.wh
-        self.projection = Math3D.genPerspProjectionFrust( 35.0, w/h, 0.10, 100.0 )
-        print( self.projection )
+        # move some stuff
+        self.model[:3,3] = [0., 0., -3.1]
+        #self.view[:3,3] = [0., 0., -.4]
 
         # Load Uniforms
         self.shader.bind()
         GL.glUniformMatrix4fv( self.model_loc, 1, GL.GL_TRUE, self.model )
         GL.glUniformMatrix4fv( self.view_loc,  1, GL.GL_TRUE, self.view )
-        GL.glUniformMatrix4fv( self.proj_loc,  1, GL.GL_TRUE, self.projection )
         self.shader.release()
 
+        # Initalize Projection
+        self.updateProjection()
+
+        # Report
+        self.reportMats()
+
+        # unlock the saftey
         self.ready = True
 
     def paintGL( self ):
@@ -281,28 +422,22 @@ class GLWidget( QtWidgets.QOpenGLWidget ):
         GL.glViewport( 0, 0, self.wh[0], self.wh[1] )
 
         rot_x = Math3D.genRotMat( "X", self.rot, degrees=True )
-        rot_y = Math3D.genRotMat( "Y", self.rot+90, degrees=True )
-
-        self.model = np.dot( np.dot( rot_x, rot_x ), self.model )
+        rot_y = Math3D.genRotMat( "Y", (self.rot/3)+90, degrees=True )
+        xform = self.model
+        xform[:3,:3] = np.dot( rot_y, rot_x )[:3,:3]
 
         self.shader.bind()
 
-        GL.glUniformMatrix4fv( self.model_loc, 1, GL.GL_TRUE, self.model )
+        GL.glUniformMatrix4fv( self.model_loc, 1, GL.GL_TRUE, xform )
 
         GL.glDrawElements( GL.GL_TRIANGLES, self.num_idx, GL.GL_UNSIGNED_SHORT, ctypes.c_void_p( 0 ) )
 
         self.shader.release()
-        self.rot += 1.0
+        self.rot += 0.15
 
     def resizeGL( self, width, height ):
         self.wh = ( width, height )
-        GL.glViewport( 0, 0, width, height )
-
-        #self.projection = Math3D.genPerspProjectionFrust( 90.0, width/height, 0.1, 100.0 )
-
-        self.shader.bind()
-        GL.glUniformMatrix4fv( self.proj_loc,  1, GL.GL_TRUE, self.projection )
-        self.shader.release()
+        self.updateProjection()
 
 
 if( __name__ == "__main__" ):
