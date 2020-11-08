@@ -86,7 +86,7 @@ class QGLCameraView( QtWidgets.QOpenGLWidget ):
               [ 1.0, 0.0], [ 0.95, 0.0],
               [ 0.0,-1.0], [ 0.0, -0.95],
               [ 0.0, 1.0], [ 0.0,  0.95 ],
-            ], dtype=FLOAT_T ) # 16 Elems, 128 Bytes
+              ], dtype=FLOAT_T ) # 16 Elems, 128 Bytes
         self._reticule *= 0.99 # just smaller than NDC limits?
         self.vbo = None
         self.has_data = False
@@ -143,9 +143,8 @@ class QGLCameraView( QtWidgets.QOpenGLWidget ):
         sub_w = int( width / cols )
         sub_h = int( height / rows )
         self._subwindow_sz = ( sub_w, sub_h )
-        for view in self._ortho_navigation:
-            x, y = view["locus"]
-            view["P"] = self.projectionFromNav( view["zoom"], view["width"], x, y )
+        for cam in self.cam_list:
+            self.updateProjection( cam )
 
     def paintGL( self ):
         """ Draw the cameras """
@@ -175,6 +174,8 @@ class QGLCameraView( QtWidgets.QOpenGLWidget ):
         GL.glPointSize( 2 )
         GL.glEnable( GL.GL_POINT_SMOOTH )
 
+        self.shader.bind()
+
         cam_idx = 0 # NOT cam Number, idx in cam_list
         for r in range( rows-1, -1, -1 ):
             for c in range( cols ):
@@ -183,7 +184,6 @@ class QGLCameraView( QtWidgets.QOpenGLWidget ):
                 # setup an Orthogonal Projection
                 # Todo: correct aspect ratio.  What do we do with non-square sensors? /=(1920/2) -= [1,1280/1920] - Do in arbiter
 
-                self.shader.bind()
 
                 GL.glUniformMatrix4fv( self._proj_loc, 1, GL.GL_TRUE, self._ortho_navigation[ cam_idx ][ "P" ] )
 
@@ -195,7 +195,7 @@ class QGLCameraView( QtWidgets.QOpenGLWidget ):
                 sin, sout = self._strider[ cam_idx ]
                 idx_in    = self.stride_list[ sin ]
                 num_dets  = self.stride_list[ sout ] - idx_in
-                idx_in += 16 # Skip reticlue
+                idx_in += 16 # Skip reticule
 
                 if( num_dets > 0 ):
                     GL.glDrawArrays( GL.GL_POINTS, idx_in, num_dets )
@@ -203,7 +203,6 @@ class QGLCameraView( QtWidgets.QOpenGLWidget ):
                 # Draw reticule
                 GL.glDrawArrays( GL.GL_LINES, 0, 16 )
 
-                self.shader.release()
 
                 # Kills redrawws?
                 overlays.append( ( x+hw-45, height-y-5, "Camera {}".format( cam_idx+1 ) ) )
@@ -213,11 +212,14 @@ class QGLCameraView( QtWidgets.QOpenGLWidget ):
                 if( cam_idx >= self.num_cams ):
                     break
 
+        self.shader.release()
+
         # # Draw overlay text
         # painter.endNativePainting()
         # for x, y, text in overlays:
         #     painter.drawText( x, y, text )
         # painter.end()
+
 
     def _camFromXY( self, x, y ):
         rows, cols = self._rc
