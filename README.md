@@ -27,15 +27,19 @@ Post Wish List:
 * Realtime-retrack
 * 1-Ray labelling
 * Selective re-tracking of Subjects
+* * Selective Labelling of markers
+* Good Velocity / Cliff limits when labelling
+* "Long operation complete" hint sound effect
+* Posable skeleton to boot tracking
 * and many more...
 
 ## Installing
-We are running on Python 3, currently developing on 3.7.2.  To get the sources and possibly contribute, you'll need git - why e;se are you here?  Get git on Windows from https://gitforwindows.org/.  Pick an easy to find folder to put the git repos into, I've taken to using 'C:\code' or '/code' as my usual repo.  `git clone https://github.com/bit-meddler/midget.git` and `git clone https://github.com/bit-meddler/rpiCap.git` in there.  To get the dependancies, you should be able to just `pip install -r Requirements.txt` from the project root (make sure it's the right pip for the Python3 interpreter).
+We are running on Python 3, currently developing on 3.7.2.  To get the sources and possibly contribute, you'll need git - why else are you here?  Get git on Windows from https://gitforwindows.org/.  Pick an easy to find folder to put the git repos into, I've taken to using 'C:\code' or '/code' as my usual repo.  `git clone https://github.com/bit-meddler/midget.git` and `git clone https://github.com/bit-meddler/rpiCap.git` in there.  To get the dependancies, you should be able to just `pip install -r Requirements.txt` from the project root (make sure it's the right pip for the Python3 interpreter).
 
 ### First Run
-Just to prove it actually does something like a MoCap system, open a terminal/cmd window and cd into midget/Python/Apps, then run `python simArbiter.py` this will simulate a 10 camera MoCap system, and play back a wand wave at 25fps.  You can experiment with the arguments, add `-r 10 -k 1` to play back more slowly (10fps).
+Just to prove it actually does something remotly like a MoCap system, open a terminal/cmd window and cd into midget/Python/Apps, then run `python simArbiter.py` this will simulate a 10 camera MoCap system, and play back a wand wave at 25fps.  You can experiment with the arguments, add `-r 10 -k 1` to play back more slowly (10fps).
 
-With an Arbiter running, you can launch the camCtrlUI from midget/Python/Experiments.  This is getting most active development as to make a MoCap camera you need really good instrumentation to see if it's working, and to start thinking about a camera calibration routine you need to visualize a wand wave and see the results of wand detection, and finally visualize the 3D positions of Calibrated cameras.
+With an Arbiter running, you can launch the 'Camera Control UI' from midget/Python/Experiments.  This is getting most active development as to make a MoCap camera you need good instrumentation to see if it's working, and to start thinking about a camera calibration routine you need to visualize a wand wave and see the results of wand detection, and finally visualize the 3D positions of the Calibrated cameras.
 
 As the project develops Core functions will make their way into Rust or C++.  We'll cross that bridge later.
 
@@ -52,7 +56,7 @@ Before we're even in a position to collect the data and work out a calibration s
 ## Apps we need
 1. Arbiter
 2. Camera Config / Monitoring
-3. Calibration Visualization
+3. Calibration & Visualization (2D/3D)
 4. CLI Calibration
 5. 3D Scene Management
 6. Reconstructions in 3D
