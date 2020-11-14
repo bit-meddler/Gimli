@@ -134,11 +134,14 @@ class Arbiter( object ):
         # repack each frame
         self.num_frames = len( cams[0] )
         empties = 0
+        #What do we do with non-square sensors? /=(1920/2) -= [1,1280/1920] - Do in arbiter
+        pixel_scale = 2.0 / 1024.0
         for i in range( self.num_frames ):
             frame = []
             split = [0]
             for j in range( 10 ):
-                cam_frame = [ [x, y, 1.5] for x, y in cams[j][i] ] # add a radius col
+                rad = np.random.uniform( 0.455, 7.5, 1 )[0]
+                cam_frame = [ [x, y, rad] for x, y in cams[j][i] ] # add a radius col
                 frame.extend( cam_frame )
                 split.append( split[-1] + len(cam_frame) )
 
@@ -147,9 +150,10 @@ class Arbiter( object ):
             np_split = np.array( split, dtype=np.int )
 
             # Convert to NDC (should be done in DetMan / SysMan)
+
             try:
-                np_frame[:,:2] /= 512.0
-                np_frame[:,:2] -= 1.
+                np_frame *= pixel_scale # all pixel united info is normalized
+                np_frame[:,:2] -= 1. # re-center
             except:
                 empties += 1
             self.frames.append( np_frame )

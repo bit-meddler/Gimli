@@ -285,10 +285,10 @@ class QMain( QtWidgets.QMainWindow ):
 
         # Central Widget
         #self.cam_view = QGLView()
-        self.cam_view = QGLCameraView()
+        self.cam_view = QGLCameraView( self )
         self.setCentralWidget( self.cam_view )
         # DANGER another dumb hack
-        self.cam_view.cam_list = [ x for x in range(10) ]
+        self.cam_view._qgl_pane.cam_list = [ x for x in range(10) ]
         self.cam_view._camlistChanged()
 
         # Add docables

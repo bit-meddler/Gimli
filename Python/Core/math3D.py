@@ -1,6 +1,7 @@
 import numpy as np
 
 FLOAT_T = np.float32
+TWO_PI = 2.0 * np.pi
 
 def genRotMat( axis, angle, degrees=False ):
     angle = np.deg2rad( angle ) if degrees else angle
