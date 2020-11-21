@@ -10,7 +10,9 @@ from PySide2 import QtCore, QtGui, QtWidgets, QtOpenGL
 import ctypes
 from OpenGL import GL, GLU, GLUT
 
-from Core.math3D import genOrthoProjectionPlains, FLOAT_T, TWO_PI
+from Core.math3D import genOrthoProjectionPlains, FLOAT_T, ID_T, TWO_PI
+import Core.labelling as lid
+
 from GUI import getStdIcon
 
 SQUARES = [ x ** 2 for x in range( 9 ) ]
@@ -35,6 +37,35 @@ class Shaders( object ):
             v_colour = vec3( 0.0, 1.0, 0.0 ) ;
         }
     }
+    """
+    dot_vtx2_src = """
+    # version 330 core
+
+    layout( location=0 ) in vec3 a_position ;
+    layout( location=1 ) in int  a_id ;
+    
+    uniform mat4 u_projection ;
+    
+    // colour tables
+    uniform vec3 u_cols[{num_cols}] ;
+    uniform vec3 u_sids[{num_sids}] ;
+    
+    out vec3 v_colour ;
+    
+    void main() {{
+        gl_Position  = u_projection * vec4( a_position.x, a_position.y, 0.0, 1.0 ) ;
+        gl_PointSize = a_position.z * 2.0 ;
+        if( a_id < 0 ) {{
+            // frozen or a sid
+            if( a_id <= {sid_bound} ) {{
+                v_colour = u_sids[ abs( a_id + {sid_conv} ) ] ;
+            }} else {{
+                v_colour = vec3( 0.0, 0.0, 1.0 ) ;
+            }}
+        }} else {{
+            v_colour = u_cols[ a_id ] ;
+        }}
+    }}
     """
     dot_frg_src = """
     # version 330 core
@@ -120,7 +151,7 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
     ZOOM_SCALE    = 1.075
     TRUCK_SCALE   = 0.01
     DEFAULT_WIDTH = 2.5
-    DEFAULT_ZOOM  = 0.98
+    DEFAULT_ZOOM  = 0.97
 
     def __init__(self, parent=None ):
         super(QGLCameraPane, self).__init__( parent )
@@ -160,21 +191,32 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
         # The Reticule (pairs for glLines)
         # In the future there may be other reticules so bound non-square sensors
         self._reticule = np.array(
-            [ [-1.0,  1.0, 0.0], [ 1.0,  1.0, 0.0], # Box
-              [ 1.0,  1.0, 0.0], [ 1.0, -1.0, 0.0],
-              [ 1.0, -1.0, 0.0], [-1.0, -1.0, 0.0],
-              [-1.0, -1.0, 0.0], [-1.0,  1.0, 0.0],
+            [ [-1.0,  1.0, 0.0], [ 1.0,   1.0, 0.0], # Box
+              [ 1.0,  1.0, 0.0], [ 1.0,  -1.0, 0.0],
+              [ 1.0, -1.0, 0.0], [-1.0,  -1.0, 0.0],
+              [-1.0, -1.0, 0.0], [-1.0,   1.0, 0.0],
               # ticks
-              [-1.0, 0.0, 0.0], [-0.95,   0.0, 0.0],
-              [ 1.0, 0.0, 0.0], [ 0.95,   0.0, 0.0],
-              [ 0.0,-1.0, 0.0], [  0.0, -0.95, 0.0],
-              [ 0.0, 1.0, 0.0], [  0.0,  0.95, 0.0],
+              [-1.0, 0.0, 0.0],  [-0.95,   0.0, 0.0],
+              [ 1.0, 0.0, 0.0],  [ 0.95,   0.0, 0.0],
+              [ 0.0,-1.0, 0.0],  [  0.0, -0.95, 0.0],
+              [ 0.0, 1.0, 0.0],  [  0.0,  0.95, 0.0],
               ], dtype=FLOAT_T ) # 16 Elems, 128 Bytes
+
+        self._reticule_ids = np.array(
+            [ lid.SID_WHITE,     lid.SID_WHITE,
+              lid.SID_WHITE,     lid.SID_WHITE,
+              lid.SID_WHITE,     lid.SID_WHITE,
+              lid.SID_WHITE,     lid.SID_WHITE,
+
+              lid.SID_WHITE,     lid.SID_RED,
+              lid.SID_WHITE,     lid.SID_RED,
+              lid.SID_WHITE,     lid.SID_GREEN,
+              lid.SID_WHITE,     lid.SID_GREEN,
+              ], dtype=ID_T )
+
         self._reticule *= 0.99 # just smaller than NDC limits?
         self._reticule_sz = 16
         self._reticule_block_sz = len( self._reticule )
-
-        self._reticule_ids = np.full( self._reticule_block_sz, -1, dtype=np.int32 )
 
         # prep GL Buffer Objects
         self._vao_cameras = None
@@ -188,10 +230,22 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
     def initializeGL( self ):
         GL.glClearColor( 0.0, 0.0, 0.0, 1.0 )
 
+        # prepare colours
+        self._cols_sid = np.asarray( lid.SID_COLOURS, dtype=FLOAT_T )
+
+        id_cols = [ [1.0, 1.0, 1.0] ]
+        id_cols.extend( lid.WAND_COLOURS )
+        self._cols_ids = np.asarray( id_cols, dtype=FLOAT_T )
+
+        # compose the shader program
+        dot_vtx_src = Shaders.dot_vtx2_src.format( num_cols=len( self._cols_ids ),
+                        num_sids=len( self._cols_sid ), sid_bound=lid.SID_BASE+1, sid_conv=lid.SID_CONV )
+
         # Setup Dot shader
         self.shader = QtGui.QOpenGLShaderProgram( self.context() )
 
-        self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, Shaders.dot_vtx_src  )
+        #self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, Shaders.dot_vtx_src  )
+        self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, dot_vtx_src )
         self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Fragment, Shaders.dot_frg_src )
         self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Geometry, Shaders.dot_geo_src )
 
@@ -214,20 +268,30 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
         # configure position Attrib
         self._vbo_dets = GL.glGenBuffers( 1 )
         GL.glBindBuffer( GL.GL_ARRAY_BUFFER, self._vbo_dets )
-        GL.glVertexAttribPointer( 0, 3, GL.GL_FLOAT, GL.GL_FALSE, 0, ctypes.c_void_p( 0 ) )
+        GL.glVertexAttribPointer( self.shader_attr_locs[ "a_position" ], 3, GL.GL_FLOAT, GL.GL_FALSE, 0, ctypes.c_void_p( 0 ) )
 
         # the id attrib
         self._vbo_ids = GL.glGenBuffers( 1 )
         GL.glBindBuffer( GL.GL_ARRAY_BUFFER, self._vbo_ids )
-        GL.glVertexAttribPointer( 1, 1, GL.GL_INT, GL.GL_FALSE, 0, ctypes.c_void_p( 0 ) )
+        GL.glVertexAttribPointer( self.shader_attr_locs[ "a_id" ], 1, GL.GL_INT, GL.GL_FALSE, 0, ctypes.c_void_p( 0 ) )
 
         # Setup uniform for Camera navigation
         self._proj_loc = self.shader.uniformLocation( "u_projection" )
 
+        # set up colour uniforms
+        self._cols_loc = self.shader.uniformLocation( "u_cols" )
+        self._sids_loc = self.shader.uniformLocation( "u_sids" )
+
+        # load colour uniforms
+        print( self._cols_ids )
+        print( self._cols_sid )
+        GL.glUniform3fv( self._cols_loc, len( self._cols_ids ), self._cols_ids )
+        GL.glUniform3fv( self._sids_loc, len( self._cols_sid ), self._cols_sid )
+
         self.shader.release()
 
         # Misc
-        GL.glHint( GL.GL_POINT_SMOOTH_HINT, GL.GL_NICEST )
+        #GL.glHint( GL.GL_POINT_SMOOTH_HINT, GL.GL_NICEST )
         GL.glEnable( GL.GL_PROGRAM_POINT_SIZE )
         #GL.glEnable( GL.GL_DEPTH_TEST )
 
@@ -269,8 +333,8 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
         #GL.glBindBuffer( GL.GL_ARRAY_BUFFER, self._vbo_dets )
 
         # set dot size
-        #GL.glPointSize( 2 )
-        GL.glEnable( GL.GL_POINT_SMOOTH )
+        GL.glPointSize( 3 )
+        #GL.glEnable( GL.GL_POINT_SMOOTH )
 
         self.shader.bind()
 
@@ -464,7 +528,16 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
         else:
             my_ids = np.asarray( ids, dtype=np.int32 )
 
+        # attempt to label
+        for i, (s_in, s_out) in enumerate( zip( self.stride_list[:-1], self.stride_list[1:] ) ):
+            labels, score = lid.labelWand( my_dets, s_in, s_out, False )
+            if( labels is not None ):
+                my_ids[s_in:s_out] = labels
+                print( "labelled wand in camera {}".format(i) )
+
         packed_data = np.concatenate( (self._reticule_ids, my_ids) )
+
+        print( packed_data )
 
         # load to VBO
         GL.glBindBuffer( GL.GL_ARRAY_BUFFER, self._vbo_ids )
