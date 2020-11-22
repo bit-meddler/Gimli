@@ -38,6 +38,7 @@ class Shaders( object ):
         }
     }
     """
+    # ISSUE #9
     dot_vtx2_src = """
     # version 330 core
 
@@ -78,6 +79,7 @@ class Shaders( object ):
         color = vec4( v_colour, 1.0 ) ;
     }
     """
+    # ISSUE #8
     dot_geo_src = """
     #version 330 core
 
@@ -118,6 +120,7 @@ class Shaders( object ):
     """
     @staticmethod
     def genGeoSdr( divisions=12 ):
+        # ISSUE #8
         ret = """
     #version 330 core
     
@@ -126,13 +129,14 @@ class Shaders( object ):
     
     void circle( vec4 position, float radius ) {{
         """.format( divisions )
+
         step = TWO_PI / divisions
         for i in range( divisions ):
             x = np.cos( i * step )
             y = np.sin( i * step )
             x = 0.0 if np.abs(x) < 1.0e-8 else x
             y = 0.0 if np.abs(y) < 1.0e-8 else y
-            ret += """gl_Position = position + (vec4({x}, {y}, 0.0, 0.0) * radius) ;
+            ret += """gl_Position = position + (vec4({x:.5f}, {y:.5f}, 0.0, 0.0) * radius) ;
         EmitVertex() ;
         """.format( x=x, y=y )
 
@@ -143,6 +147,7 @@ class Shaders( object ):
         circle( gl_in[0].gl_Position, gl_in[0].gl_PointSize ) ;
     }  
     """
+
         return ret
 
 
@@ -151,7 +156,7 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
     ZOOM_SCALE    = 1.075
     TRUCK_SCALE   = 0.01
     DEFAULT_WIDTH = 2.5
-    DEFAULT_ZOOM  = 0.97
+    DEFAULT_ZOOM  = 1.075
 
     def __init__(self, parent=None ):
         super(QGLCameraPane, self).__init__( parent )
@@ -191,17 +196,17 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
         # The Reticule (pairs for glLines)
         # In the future there may be other reticules so bound non-square sensors
         self._reticule = np.array(
-            [ [-1.0,  1.0, 0.0], [ 1.0,   1.0, 0.0], # Box
-              [ 1.0,  1.0, 0.0], [ 1.0,  -1.0, 0.0],
-              [ 1.0, -1.0, 0.0], [-1.0,  -1.0, 0.0],
-              [-1.0, -1.0, 0.0], [-1.0,   1.0, 0.0],
+            [ [-1.0,  1.0, 0.0], [ 1.0,   1.0,  0.0], # Box
+              [ 1.0,  1.0, 0.0], [ 1.0,  -1.0,  0.0],
+              [ 1.0, -1.0, 0.0], [-1.0,  -1.0,  0.0],
+              [-1.0, -1.0, 0.0], [-1.0,   1.0,  0.0],
               # ticks
-              [-1.0, 0.0, 0.0],  [-0.95,   0.0, 0.0],
-              [ 1.0, 0.0, 0.0],  [ 0.95,   0.0, 0.0],
-              [ 0.0,-1.0, 0.0],  [  0.0, -0.95, 0.0],
-              [ 0.0, 1.0, 0.0],  [  0.0,  0.95, 0.0],
+              [-1.0,  0.0, 0.0], [-0.95,  0.0,  0.0],
+              [ 1.0,  0.0, 0.0], [ 0.95,  0.0,  0.0],
+              [ 0.0, -1.0, 0.0], [ 0.0,  -0.95, 0.0],
+              [ 0.0,  1.0, 0.0], [ 0.0,   0.95, 0.0],
               ], dtype=FLOAT_T ) # 16 Elems, 128 Bytes
-
+        # ISSUE #9
         self._reticule_ids = np.array(
             [ lid.SID_WHITE,     lid.SID_WHITE,
               lid.SID_WHITE,     lid.SID_WHITE,
@@ -214,7 +219,6 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
               lid.SID_WHITE,     lid.SID_GREEN,
               ], dtype=ID_T )
 
-        self._reticule *= 0.99 # just smaller than NDC limits?
         self._reticule_sz = 16
         self._reticule_block_sz = len( self._reticule )
 
@@ -230,6 +234,7 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
     def initializeGL( self ):
         GL.glClearColor( 0.0, 0.0, 0.0, 1.0 )
 
+        # ISSUE #9
         # prepare colours
         self._cols_sid = np.asarray( lid.SID_COLOURS, dtype=FLOAT_T )
 
@@ -237,6 +242,7 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
         id_cols.extend( lid.WAND_COLOURS )
         self._cols_ids = np.asarray( id_cols, dtype=FLOAT_T )
 
+        # ISSUE #9
         # compose the shader program
         dot_vtx_src = Shaders.dot_vtx2_src.format( num_cols=len( self._cols_ids ),
                         num_sids=len( self._cols_sid ), sid_bound=lid.SID_BASE+1, sid_conv=lid.SID_CONV )
@@ -247,7 +253,8 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
         #self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, Shaders.dot_vtx_src  )
         self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, dot_vtx_src )
         self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Fragment, Shaders.dot_frg_src )
-        self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Geometry, Shaders.dot_geo_src )
+        # ISSUE #8
+        # self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Geometry, Shaders.dot_geo_src )
 
         self.shader_attr_locs[ "a_position" ] = 0
         GL.glEnableVertexAttribArray( self.shader_attr_locs[ "a_position" ] )
@@ -278,10 +285,12 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
         # Setup uniform for Camera navigation
         self._proj_loc = self.shader.uniformLocation( "u_projection" )
 
+        # ISSUE #9
         # set up colour uniforms
-        self._cols_loc = self.shader.uniformLocation( "u_cols" )
-        self._sids_loc = self.shader.uniformLocation( "u_sids" )
+        self._cols_loc = self.shader.uniformLocation( "u_cols[0]" )
+        self._sids_loc = self.shader.uniformLocation( "u_sids[0]" )
 
+        # ISSUE #9
         # load colour uniforms
         print( self._cols_ids )
         print( self._cols_sid )
@@ -292,8 +301,8 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
 
         # Misc
         #GL.glHint( GL.GL_POINT_SMOOTH_HINT, GL.GL_NICEST )
-        GL.glEnable( GL.GL_PROGRAM_POINT_SIZE )
-        #GL.glEnable( GL.GL_DEPTH_TEST )
+        # ISSUE #8
+        #GL.glEnable( GL.GL_PROGRAM_POINT_SIZE )
 
         # HACK!
         # dummy data so reticules are drawn
@@ -332,8 +341,8 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
         # get the right buffer ? - guess not
         #GL.glBindBuffer( GL.GL_ARRAY_BUFFER, self._vbo_dets )
 
-        # set dot size
-        GL.glPointSize( 3 )
+        # # ISSUE #8 - set dot size
+        GL.glPointSize( 2 )
         #GL.glEnable( GL.GL_POINT_SMOOTH )
 
         self.shader.bind()
