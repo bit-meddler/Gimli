@@ -105,11 +105,62 @@ class QBrownPalette( QPaletteOveride ):
 # - Scene Model ----------------------------------------------------------------
 
 class SceneModel( QtCore.QAbstractItemModel ):
+
     DEFAULT_FLAGS = QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable
 
-    def __init__( self, root, parent=None ):
+    ROLE_INTERNAL_ID = QtCore.Qt.UserRole
+
+    NODE_DEPENDANCIES = {
+        Nodes.TYPE_CAMERA_MC_PI : Nodes.TYPE_GROUP_MOCAP,
+        Nodes.TYPE_GROUP_MOCAP  : Nodes.TYPE_GROUP_SYSTEM,
+
+        Nodes.TYPE_SYNC_PI      : Nodes.TYPE_GROUP_SYSTEM,
+    }
+
+    def __init__( self, root=None, parent=None ):
         super( SceneModel, self ).__init__( parent )
-        self.root = Nodes.factory( Nodes.TYPE_ROOT, "Root" )
+        self.root = root or Nodes.factory( Nodes.TYPE_ROOT, "Root" )
+        self.root_idx = self.createIndex( self.root.row(), 0, self.root )
+        self.expected_nodes = set( Nodes.TYPE_ROOT )
+        self.groups = {} # lut of TYPE:GroupNode
+
+    def registerNode( self, node_type ):
+        # add to expected set
+        self.expected_nodes.add( node_type )
+
+        # work out dep chain
+        dep_chain = []
+        node = node_type
+        while node in self.NODE_DEPENDANCIES:
+            dep_chain.append( self.NODE_DEPENDANCIES[ node ] )
+            node = self.NODE_DEPENDANCIES[ node ]
+
+        # then backwards to build hierarchy if it doesn't exist
+        last_parent = self.root
+        while( len( dep_chain ) > 0 ):
+            node_t = dep_chain.pop()
+            if( node_t not in self.groups ):
+                last_parent = Nodes.factory( node_t, Nodes.DEFAULT_NAMES[ node_t ], parent=last_parent )
+                self.groups[ node_t ] = last_parent
+
+    def addNodeTo( self, new_node, parent_node ):
+        parent_idx = self.genIndex( parent_node )
+        position = parent_node.childCount()
+        name = parent_node.safeChildName( new_node.name )
+        new_node.name = name
+
+        self.beginInsertRows( parent_idx, position, position )
+        parent_node.insertChild( position, new_node )
+        self.endInsertRows()
+
+    def addNode( self, new_node ):
+        node_gp = self.NODE_DEPENDANCIES.get( new_node.type_info, Nodes.TYPE_ROOT )
+        parent_node = self.groups.get( node_gp, self.root )
+        self.addNodeTo( new_node, parent_node )
+
+    def dump( self ):
+        print( self.root._log() )
+        print( self.groups )
 
     def populatedGroups( self ):
         pop = 0
@@ -143,7 +194,10 @@ class SceneModel( QtCore.QAbstractItemModel ):
 
         elif (role == QtCore.Qt.DecorationRole):
             if (col == 0):
-                return node.icon
+                return None #node.icon
+
+        elif( role == self.ROLE_INTERNAL_ID ):
+            return node.data.get( "ID", 0 )
 
         elif (role == QtCore.Qt.ToolTipRole):
             return node.fullPath()

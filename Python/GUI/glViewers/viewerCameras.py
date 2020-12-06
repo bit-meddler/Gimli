@@ -581,6 +581,10 @@ class QGLCameraView( QtWidgets.QMainWindow ):
     def __init__( self, parent ):
         super( QGLCameraView, self ).__init__()
 
+        # selection Model and daat Model
+        self._select = None
+        self._model  = None
+
         self._qgl_pane = QGLCameraPane( self )
 
         self._setupToolBar()
@@ -589,7 +593,30 @@ class QGLCameraView( QtWidgets.QMainWindow ):
 
         self._qgl_pane.update()
 
+    def setModel( self, new_model ):
+        self._model = new_model
+
+    def setSelectionModel( self, new_model ):
+        self._select = new_model
+
     def _camlistChanged( self ):
+        # Depricated
+        self._qgl_pane._camlistChanged()
+
+    def onSelectionChanged( self, selected, deselected ):
+        if( self._select is None ):
+            return
+
+        # walk selected and find cameras
+        cam_list = []
+        last_cam = -1
+        for idx in self._select.indexes():
+            cam = idx.data( role=self._model.ROLE_INTERNAL_ID )
+            cam_list.append( cam )
+            last_cam = cam
+
+        self._qgl_pane.cam_list = cam_list
+        self._qgl_pane.reorderCamList( lead=last_cam )
         self._qgl_pane._camlistChanged()
 
     def acceptNewData( self, dets, strides, ids ):

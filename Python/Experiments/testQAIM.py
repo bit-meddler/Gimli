@@ -28,6 +28,12 @@ class QMain( QtWidgets.QMainWindow ):
         print( indexes[-1].data( role=QtCore.Qt.DecorationRole ) )
         print( node )
 
+    def onSelectionChanged( self, selected, deselected ):
+        # walk selcted and find cameras
+        indexes = self.sel.selection().indexes()
+        print( ", ".join( [ i.data() for i in indexes ] ) )
+        
+
     def _buildUI( self ):
         self.setWindowTitle( "Testing MVC" )
 
@@ -41,11 +47,13 @@ class QMain( QtWidgets.QMainWindow ):
         list_v1 = QtWidgets.QListView()
         list_v1.setViewMode( QtWidgets.QListView.ListMode )
         list_v1.setSelectionMode( QtWidgets.QAbstractItemView.ExtendedSelection )
+        list_v1_sm = list_v1.selectionModel()
         
         list_v2 = QtWidgets.QListView()
         list_v2.setViewMode( QtWidgets.QListView.IconMode )
         list_v2.setSelectionMode( QtWidgets.QAbstractItemView.ExtendedSelection )
-
+        list_v2_sm = list_v2.selectionModel()
+        
         grid.addWidget( tree_v, 0, 0, 2, 1 )
         grid.addWidget( list_v1, 0, 1, 1, 1 )
         grid.addWidget( list_v2, 1, 1, 1, 1 )
@@ -54,14 +62,19 @@ class QMain( QtWidgets.QMainWindow ):
         list_v1.setModel( self.model )
         list_v2.setModel( self.model )
 
-        self.sel = tree_v.selectionModel()
+        self.sel = QtCore.QItemSelectionModel( self.model )
 
-        self.sel.selectionChanged.connect( self._selectionReport )
+        tree_v.setSelectionModel( self.sel )
 
+        #self.sel.selectionChanged.connect( self._selectionReport )
+        self.sel.selectionChanged.connect( self.onSelectionChanged )
+        
         list_v1.setSelectionModel( self.sel )
         list_v1.setRootIndex( self.model.ROOT_CAMS )
         list_v2.setSelectionModel( self.sel )
         list_v2.setRootIndex( self.model.ROOT_CAMS )
+
+        del( list_v1_sm, list_v2_sm )
 
         self._ctx = QtWidgets.QWidget()
         self._ctx.setLayout( grid )

@@ -24,7 +24,7 @@ terse_log = logging.Formatter( "%(asctime)s.%(msecs)04d [%(levelname)-8s] %(mess
 
 import Comms
 
-from GUI import QDarkPalette, QBrownPalette, getStdIcon, Camera, Mesh
+from GUI import QDarkPalette, QBrownPalette, getStdIcon, Camera, Mesh, SceneModel, Nodes
 
 from GUI.editors.dockingLog        import QDockingLog
 from GUI.editors.dockingAttributes import QDockingAttrs
@@ -115,6 +115,17 @@ class QMain( QtWidgets.QMainWindow ):
         self.selection_observers = [ ]
         self._actions = { }
 
+        # qt MVC System
+        self.scene_model = SceneModel()
+        # Register Nodes we expect in this scene
+        self.scene_model.registerNode( Nodes.TYPE_CAMERA_MC_PI )
+
+        # Shared Selection Model
+        self.selection_model = QtCore.QItemSelectionModel( self.scene_model )
+
+        # attach the app to the selection model
+        self.selection_model.selectionChanged.connect( self.onSelectionChanged )
+
         # Centroid receiving
         self.dets_q = SimpleQueue()
         self.dets_time = None
@@ -203,6 +214,7 @@ class QMain( QtWidgets.QMainWindow ):
         self.status_bar.showMessage( msg, dwel )
 
     def updateSelection( self ):
+        # Depricated
         # tell oservers it's changed
         for obs in self.selection_observers:
             obs.selectionChanged( self.selection_que )
@@ -212,6 +224,15 @@ class QMain( QtWidgets.QMainWindow ):
             report = "{}: {}".format( type( self.selection_que[ 0 ] ),
                                       ", ".join( map( lambda x: str( x.id ), self.selection_que ) ) )
 
+        log.info( "Selected: {}".format( report ) )
+
+    def onSelectionChanged( self, selected, deselected ):
+        # provided "selcted/deselected" are only this change. so need to dip into the selection model
+        # to understand what's happening
+        indexes = self.selection_model.selection().indexes()
+        report = "None"
+        if( len( indexes ) > 0 ):
+            report = ", ".join( [ i.data() for i in indexes ] )
         log.info( "Selected: {}".format( report ) )
 
     # Action CBs
@@ -283,6 +304,11 @@ class QMain( QtWidgets.QMainWindow ):
         self._buildMenuBar()
         self._buildToolbar()
 
+        # Add some dumy cams
+        for i in range( 10 ):
+            self.scene_model.addNode( Nodes.factory( Nodes.TYPE_CAMERA_MC_PI ) )
+        self.scene_model.dump()
+
         # Central Widget
         #self.cam_view = QGLView()
         self.cam_view = QGLCameraView( self )
@@ -299,6 +325,7 @@ class QMain( QtWidgets.QMainWindow ):
 
         self.splash.showMessage( "Editor: Outliner" )
         outliner = QDockingOutliner( self )
+        outliner.setModels( self.scene_model, self.selection_model )
         self.addDockWidget( QtCore.Qt.LeftDockWidgetArea, outliner )
 
         # setup the attribute editor = TODO: This better

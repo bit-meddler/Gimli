@@ -16,6 +16,22 @@ TYPE_GROUP_MOCAP = "GP_MOCAP"
 TYPE_GROUP_VIEW = "GP_VIEW"
 TYPE_GROUP_TARGETS = "GP_TARGETS"
 
+
+DEFAULT_NAMES = {
+    TYPE_NODE : "Node",
+    TYPE_ROOT : "Root",
+    TYPE_CAMERA : "Camera",
+    TYPE_CAMERA_MC_PI : "Camera",
+    TYPE_SYNC_PI : "Sync Unit",
+    TYPE_VIEW : "View",
+    TYPE_TARGET : "Target",
+
+    TYPE_GROUP : "Group",
+    TYPE_GROUP_SYSTEM : "System",
+    TYPE_GROUP_MOCAP : "Cameras",
+    TYPE_GROUP_VIEW : "Views",
+    TYPE_GROUP_TARGETS : "Targets",
+}
 # ------------------------- The main Node base class ----------------------------- #
 class Node( object ):
     """ Abstract base class for Nodes. """
@@ -155,7 +171,8 @@ NODE_LUT = {
     GroupTargets.TYPE_INFO     : GroupTargets,
 }
 
-def factory( node_type, name, parent=None ):
+def factory( node_type, name=None, parent=None ):
+    name = name or DEFAULT_NAMES[ node_type ]
     return NODE_LUT[ node_type ]( name, parent )
 
     
@@ -174,6 +191,8 @@ __all__ = [
     "TYPE_GROUP_CAMERA",
     "TYPE_GROUP_VIEW",
     "TYPE_GROUP_TARGETS",
+
+    "DEFAULT_NAMES",
     
     "Node",
     
