@@ -4,8 +4,8 @@ from PySide2 import QtCore, QtGui, QtWidgets
 
 app = QtWidgets.QApplication() # stupid icon thing
 
-#from qaimNodes import SceneModel
-from qaimDict import SceneModel
+from qaimNodes import SceneModel
+#from qaimDict import SceneModel
 
 
 class QMain( QtWidgets.QMainWindow ):
@@ -21,6 +21,13 @@ class QMain( QtWidgets.QMainWindow ):
     def _setupModel( self ):
         self.model = SceneModel( None, self )
 
+    def _selectionReport( self, index ):
+        indexes = self.sel.selection().indexes()
+        print( ", ".join( [ i.data() for i in indexes ] ) )
+        node = indexes[-1].internalPointer()
+        print( indexes[-1].data( role=QtCore.Qt.DecorationRole ) )
+        print( node )
+
     def _buildUI( self ):
         self.setWindowTitle( "Testing MVC" )
 
@@ -29,10 +36,15 @@ class QMain( QtWidgets.QMainWindow ):
 
         tree_v = QtWidgets.QTreeView()
         tree_v.setHeaderHidden( True )
+        tree_v.setSelectionMode( QtWidgets.QAbstractItemView.ExtendedSelection )
+        
         list_v1 = QtWidgets.QListView()
         list_v1.setViewMode( QtWidgets.QListView.ListMode )
+        list_v1.setSelectionMode( QtWidgets.QAbstractItemView.ExtendedSelection )
+        
         list_v2 = QtWidgets.QListView()
         list_v2.setViewMode( QtWidgets.QListView.IconMode )
+        list_v2.setSelectionMode( QtWidgets.QAbstractItemView.ExtendedSelection )
 
         grid.addWidget( tree_v, 0, 0, 2, 1 )
         grid.addWidget( list_v1, 0, 1, 1, 1 )
@@ -42,12 +54,14 @@ class QMain( QtWidgets.QMainWindow ):
         list_v1.setModel( self.model )
         list_v2.setModel( self.model )
 
-        sel = tree_v.selectionModel()
+        self.sel = tree_v.selectionModel()
 
-        list_v1.setSelectionModel( sel )
+        self.sel.selectionChanged.connect( self._selectionReport )
+
+        list_v1.setSelectionModel( self.sel )
         list_v1.setRootIndex( self.model.ROOT_CAMS )
-        list_v2.setSelectionModel( sel )
-        list_v2.setRootIndex( self.model.ROOT_SYS )
+        list_v2.setSelectionModel( self.sel )
+        list_v2.setRootIndex( self.model.ROOT_CAMS )
 
         self._ctx = QtWidgets.QWidget()
         self._ctx.setLayout( grid )

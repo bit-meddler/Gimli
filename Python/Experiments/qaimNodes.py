@@ -203,6 +203,7 @@ class SceneModel( QtCore.QAbstractItemModel ):
         # Some Cameras
         for i in range( 10 ):
             _ = CameraNode( "Camera_{:0>2}".format( i+1 ), self.grp_cams )
+
         # Some 3d Views
         _ = ViewNode( "persp", self.grp_view )
         _ = ViewNode( "ortho_left", self.grp_view )

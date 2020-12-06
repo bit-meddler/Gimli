@@ -6,6 +6,7 @@
 import logging
 from PySide2 import QtCore, QtGui, QtWidgets, QtOpenGL
 
+from Core import Nodes
 
 # Look and Feel Helpers
 def getStdIcon( icon_enum ):
@@ -98,7 +99,118 @@ class QBrownPalette( QPaletteOveride ):
     def __init__( self, *args ):
         super( QBrownPalette, self ).__init__( *args )
 
-# - Selectables.  This will be replaces with a proper AbstractItemModel and chutney
+
+
+
+# - Scene Model ----------------------------------------------------------------
+
+class SceneModel( QtCore.QAbstractItemModel ):
+    DEFAULT_FLAGS = QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable
+
+    def __init__( self, root, parent=None ):
+        super( SceneModel, self ).__init__( parent )
+        self.root = Nodes.factory( Nodes.TYPE_ROOT, "Root" )
+
+    def populatedGroups( self ):
+        pop = 0
+        for grp in self.root._children:
+            if (grp.hasChildren()):
+                pop += 1
+        return pop
+
+    def rowCount( self, parent ):
+        node = self.getNodeIndex( parent )
+
+        # way to hide un populated grp nodes??
+        # if( node == self.root ):
+        #    return self.populatedGroups()
+        # But that would change the subsequent indexing!
+
+        return node._child_count
+
+    def columnCount( self, parent ):
+        return 1
+
+    def data( self, index, role ):
+        if (not index.isValid()):
+            return None
+
+        node = index.internalPointer()
+        col = index.column()
+
+        if (role == QtCore.Qt.DisplayRole):
+            return node.name
+
+        elif (role == QtCore.Qt.DecorationRole):
+            if (col == 0):
+                return node.icon
+
+        elif (role == QtCore.Qt.ToolTipRole):
+            return node.fullPath()
+
+    def headerData( self, section, orient, role ):
+        if (role == QtCore.Qt.DisplayRole):
+            return ""
+
+    def flags( self, index ):
+        return self.DEFAULT_FLAGS
+
+    def parent( self, index ):
+        node = index.internalPointer()
+
+        if (node.parent == self.root):
+            return QtCore.QModelIndex()
+
+        return self.createIndex( node.parent.row(), 0, node.parent )
+
+    def genIndex( self, node ):
+        return self.createIndex( node.row(), 0, node )
+
+    def index( self, row, col, parent ):
+        if (not self.hasIndex( row, col, parent )):
+            return QtCore.QModelIndex()
+
+        parent_node = self.getNodeIndex( parent )
+
+        child = parent_node.getChild( row )
+
+        if (child is not None):
+            return self.createIndex( row, col, child )
+        else:
+            return QtCore.QModelIndex()
+
+    def getNodeIndex( self, index ):
+        if (index.isValid()):
+            node = index.internalPointer()
+            if (node is not None):
+                return node
+
+        return self.root
+
+    def insertRows( self, position, rows, parent=QtCore.QModelIndex(), node_type=Nodes.TYPE_NODE ):
+        parent_node = self.getNodeIndex( parent )
+        res = True
+        self.beginInsertRows( parent, position, position + rows - 1 )
+        for row in range( rows ):
+            name = parent_node.safeChildName( "NewNode" )
+            child = Nodes.factory( node_type, name )
+            res &= parent_node.insertChild( position + row, child )
+        self.endInsertRows()
+        return res
+
+    def removeRows( self, position, rows, parent=QtCore.QModelIndex() ):
+        parent_node = self.getNodeIndex( parent )
+        res = True
+        self.beginRemoveRows( parent, position, position + rows - 1 )
+        for row in range( rows ):
+            res &= parent_node.removeChild( position )
+        self.endRemoveRows()
+        return res
+
+
+
+
+# - Selectables - These need to become "UI Nodes" or something
 class Selectable( object ):
     TRAITS = {}
     HAS_ADV = False
