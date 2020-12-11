@@ -67,7 +67,59 @@ class Shaders( object ):
             v_colour = u_cols[ a_id ] ;
         }}
     }}
-    """
+    """ # It's supposed to work like this...
+
+    dot_vtx_src3 = """
+    # version 330 core
+
+    layout( location=0 ) in vec3 a_position ;
+    layout( location=1 ) in int  a_id ;
+    
+    uniform mat4 u_projection ;
+    
+    out vec3 v_colour ;
+    
+    void main() {
+        gl_Position  = u_projection * vec4( a_position.x, a_position.y, 0.0, 1.0 ) ;
+        gl_PointSize = a_position.z * 2.0 ;
+        vec3 sel_col ;
+        
+        if( a_id <= 0 ) {
+            // frozen or a sid
+            if( a_id < -2147479551 ) {
+                int s_id = abs( a_id + 2147479552 ) ;
+                
+                if(        s_id == 0 ) {
+                    sel_col = vec3( 1.0, 1.0, 1.0 ) ;
+                } else if( s_id == 1 ) {
+                    sel_col = vec3( 1.0, 0.0, 0.0 ) ;
+                } else if( s_id == 2 ) {
+                    sel_col = vec3( 0.0, 1.0, 0.0 ) ;
+                } else if( s_id == 3 ) {
+                    sel_col = vec3( 0.0, 0.0, 1.0 ) ;
+                }
+            } else {
+                sel_col = vec3( 0.0, 0.0, 1.0 ) ; // <-------------------------
+            }
+        } else {
+            // A label
+            sel_col = vec3( 1.0, 1.0, 1.0 ) ;
+            
+            if(        a_id == 1 ) {
+                sel_col = vec3( 1.0, 0.0, 0.0 ) ;
+            } else if( a_id == 2 ) {
+                sel_col = vec3( 1.0, 1.0, 0.0 ) ;
+            } else if( a_id == 3 ) {
+                sel_col = vec3( 0.0, 1.0, 0.0 ) ;
+            } else if( a_id == 4 ) {
+                sel_col = vec3( 0.0, 1.0, 1.0 ) ;
+            } else if( a_id == 5 ) {
+                sel_col = vec3( 0.0, 0.0, 1.0 ) ;
+            }
+        }
+        v_colour = sel_col ;
+    }
+    """ # Nasty Hack - Hard Coded Colours
     dot_frg_src = """
     # version 330 core
     
@@ -250,11 +302,22 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
         # Setup Dot shader
         self.shader = QtGui.QOpenGLShaderProgram( self.context() )
 
-        #self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, Shaders.dot_vtx_src  )
-        self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, dot_vtx_src )
-        self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Fragment, Shaders.dot_frg_src )
+        #add_ok = self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, dot_vtx_src )
+        add_ok = self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, Shaders.dot_vtx_src3  )
+        if (not add_ok):
+            print( "Add Error", self.shader.log() )
+            exit()
+
+        add_ok = self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Fragment, Shaders.dot_frg_src )
+        if (not add_ok):
+            print( "Add Error", self.shader.log() )
+            exit()
+
         # ISSUE #8
-        # self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Geometry, Shaders.dot_geo_src )
+        # add_ok = self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Geometry, Shaders.dot_geo_src )
+        if (not add_ok):
+            print( "Add Error", self.shader.log() )
+            exit()
 
         self.shader_attr_locs[ "a_position" ] = 0
         GL.glEnableVertexAttribArray( self.shader_attr_locs[ "a_position" ] )
@@ -264,7 +327,10 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
         GL.glEnableVertexAttribArray( self.shader_attr_locs[ "a_id" ] )
         GL.glBindAttribLocation( self.shader.programId(), self.shader_attr_locs[ "a_id" ], "a_id" )
 
-        self.shader.link()
+        link_ok = self.shader.link()
+        if( not link_ok ):
+            print( "Error", self.shader.log() )
+            exit()
         self.shader.bind()
 
         # camera VAO
@@ -294,8 +360,8 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
         # load colour uniforms
         print( self._cols_ids )
         print( self._cols_sid )
-        GL.glUniform3fv( self._cols_loc, len( self._cols_ids ), self._cols_ids )
-        GL.glUniform3fv( self._sids_loc, len( self._cols_sid ), self._cols_sid )
+        #GL.glUniform3fv( self._cols_loc, len( self._cols_ids ), self._cols_ids )
+        #GL.glUniform3fv( self._sids_loc, len( self._cols_sid ), self._cols_sid )
 
         self.shader.release()
 
@@ -542,15 +608,15 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
             labels, score = lid.labelWand( my_dets, s_in, s_out, False )
             if( labels is not None ):
                 my_ids[s_in:s_out] = labels
-                print( "labelled wand in camera {}".format(i) )
+                #print( "labelled wand in camera {}".format(i) )
 
-        packed_data = np.concatenate( (self._reticule_ids, my_ids) )
+        packed_data2 = np.concatenate( (self._reticule_ids, my_ids) )
 
-        print( packed_data )
+        #print( packed_data2 )
 
         # load to VBO
         GL.glBindBuffer( GL.GL_ARRAY_BUFFER, self._vbo_ids )
-        GL.glBufferData( GL.GL_ARRAY_BUFFER, packed_data.nbytes, packed_data, GL.GL_STATIC_DRAW )
+        GL.glBufferData( GL.GL_ARRAY_BUFFER, packed_data2.nbytes, packed_data2, GL.GL_STATIC_DRAW )
 
         # call redraw
         self.update()
