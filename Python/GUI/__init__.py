@@ -104,11 +104,13 @@ class QBrownPalette( QPaletteOveride ):
 
 # - Scene Model ----------------------------------------------------------------
 
+ROLE_INTERNAL_ID = QtCore.Qt.UserRole + 0
+ROLE_NUMROIDS    = QtCore.Qt.UserRole + 1
+ROLE_TYPEINFO    = QtCore.Qt.UserRole + 2
+
 class SceneModel( QtCore.QAbstractItemModel ):
 
     DEFAULT_FLAGS = QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable
-
-    ROLE_INTERNAL_ID = QtCore.Qt.UserRole
 
     NODE_DEPENDANCIES = {
         Nodes.TYPE_CAMERA_MC_PI : Nodes.TYPE_GROUP_MOCAP,
@@ -123,6 +125,14 @@ class SceneModel( QtCore.QAbstractItemModel ):
         self.root_idx = self.createIndex( self.root.row(), 0, self.root )
         self.expected_nodes = set( Nodes.TYPE_ROOT )
         self.groups = {} # lut of TYPE:GroupNode
+
+        # Incoming mocap frame (dets, strides, labels)
+        # Thread lock?
+        self.frame_count = 0
+        self.dets_time = 0
+        self.dets_strides = []
+        self.dets_dets = []
+        self.dets_count = []
 
     def registerNode( self, node_type ):
         # add to expected set
@@ -169,6 +179,11 @@ class SceneModel( QtCore.QAbstractItemModel ):
                 pop += 1
         return pop
 
+    def emitUpdate( self ):
+        first = self.createIndex( 0, 0, self.root )
+        last  = self.createIndex( self.root._child_count, 0, self.root )
+        self.dataChanged.emit( first, last, [ ] )
+
     def rowCount( self, parent ):
         node = self.getNodeIndex( parent )
 
@@ -196,8 +211,15 @@ class SceneModel( QtCore.QAbstractItemModel ):
             if (col == 0):
                 return None #node.icon
 
-        elif( role == self.ROLE_INTERNAL_ID ):
+        elif( role == ROLE_INTERNAL_ID ):
             return node.data.get( "ID", 0 )
+
+        elif( role == ROLE_NUMROIDS ):
+            cam_id = node.data.get( "ID", 0 )
+            return self.dets_count[ cam_id ]
+
+        elif( role == ROLE_TYPEINFO ):
+            return mode.type_info
 
         elif (role == QtCore.Qt.ToolTipRole):
             return node.fullPath()
@@ -213,6 +235,9 @@ class SceneModel( QtCore.QAbstractItemModel ):
         node = index.internalPointer()
 
         if (node.parent == self.root):
+            return QtCore.QModelIndex()
+
+        elif( node.parent == None ): # None parent == root
             return QtCore.QModelIndex()
 
         return self.createIndex( node.parent.row(), 0, node.parent )

@@ -111,9 +111,8 @@ class QMain( QtWidgets.QMainWindow ):
         self.splash.show()
 
         # Some UI stuff
-        self.selection_que = [ ]
-        self.selection_observers = [ ]
-        self._actions = { }
+        self._actions = {}
+        self.frame_observers = []
 
         # qt MVC System
         self.scene_model = SceneModel()
@@ -128,9 +127,6 @@ class QMain( QtWidgets.QMainWindow ):
 
         # Centroid receiving
         self.dets_q = SimpleQueue()
-        self.dets_time = None
-        self.dets_strides = [ ]
-        self.dets_dets = [ ]
 
         # Arbiter Comms channels
         # TODO: Test if Arbiter is running, spawn one if needed
@@ -188,43 +184,32 @@ class QMain( QtWidgets.QMainWindow ):
 
     def getNewFrame( self ):
         det_fps, time, strides, dets = self.dets_q.get()
-        self.dets_time = time
-        self.dets_strides = strides
-        self.dets_dets = dets
-        self.packet_count += 1
-        num_cams = len( strides ) - 1
-        roid_count = [ 0 for _ in range( num_cams ) ]
-        for i in range( num_cams ):
-            roid_count[ i ] = strides[ i + 1 ] - strides[ i ]
-        self.cam_mon.roid_count_list = roid_count
+        self.scene_model.frame_count += 1
+        self.scene_model.dets_time = time
+        self.scene_model.dets_strides = strides
+        self.scene_model.dets_dets = dets
+
+        roid_count = [ strides[ i + 1 ] - strides[ i ] for i in range( len( strides ) - 1 ) ]
+        self.scene_model.dets_count = roid_count
+
+        self.scene_model.emitUpdate()
 
         # update watchers
-        self.cam_mon.updateRoidCount()
-        if (self.packet_count % 10 == 0):
+        for obs in self.frame_observers:
+            obs.update()
+
+        if( self.scene_model.frame_count % 10 == 0 ):
             log.info( "Got centroids @{:3.2f} fps: {}".format( det_fps, roid_count ) )
-        self.cam_view.acceptNewData( self.dets_dets, strides, None )
 
     def sendCNC( self, verb, noun, value=None ):
-        tgt_list = list( map( lambda x: x.id, self.selection_que ) )
+        indexes = self.selection_model.selection().indexes()
+        tgt_list = [ i.data(role=Nodes.ROLE_INTERNAL_ID) for i in indexes if i.data(role=ROLE_TYPEINFO) == Nodes.TYPE_CAMERA_MC_PI ]
         self.command.send( verb, noun, value, tgt_list )
         log.info( "SENT: {}, {}, {} to {}".format( verb, noun, value, tgt_list ) )
 
     def logNreport( self, msg, dwel=1200 ):
         log.info( msg )
         self.status_bar.showMessage( msg, dwel )
-
-    def updateSelection( self ):
-        # Depricated
-        # tell oservers it's changed
-        for obs in self.selection_observers:
-            obs.selectionChanged( self.selection_que )
-
-        report = "None"
-        if (len( self.selection_que ) > 0):
-            report = "{}: {}".format( type( self.selection_que[ 0 ] ),
-                                      ", ".join( map( lambda x: str( x.id ), self.selection_que ) ) )
-
-        log.info( "Selected: {}".format( report ) )
 
     def onSelectionChanged( self, selected, deselected ):
         # provided "selcted/deselected" are only this change. so need to dip into the selection model
@@ -306,12 +291,18 @@ class QMain( QtWidgets.QMainWindow ):
 
         # Add some dumy cams
         for i in range( 10 ):
-            self.scene_model.addNode( Nodes.factory( Nodes.TYPE_CAMERA_MC_PI ) )
-        self.scene_model.dump()
+            cam_node =  Nodes.factory( Nodes.TYPE_CAMERA_MC_PI )
+            cam_node.data["ID"] = i
+            self.scene_model.addNode( cam_node )
+        # Prime with dummy data
+        dummy_frame = ( 1., 0, np.zeros( (11,) ), np.array( [ ] ).reshape( 0, 3 ) )
+        self.dets_q.put( dummy_frame )
+        self.getNewFrame()
 
         # Central Widget
         #self.cam_view = QGLView()
         self.cam_view = QGLCameraView( self )
+        self.frame_observers.append( self.cam_view )
         self.setCentralWidget( self.cam_view )
         # DANGER another dumb hack
         self.cam_view._qgl_pane.cam_list = [ x for x in range(10) ]
@@ -324,16 +315,15 @@ class QMain( QtWidgets.QMainWindow ):
         self.addDockWidget( QtCore.Qt.BottomDockWidgetArea, logDockWidget )
 
         self.splash.showMessage( "Editor: Outliner" )
-        outliner = QDockingOutliner( self )
-        outliner.setModels( self.scene_model, self.selection_model )
-        self.addDockWidget( QtCore.Qt.LeftDockWidgetArea, outliner )
+        self.outliner = QDockingOutliner( self )
+        self.outliner.setModels( self.scene_model, self.selection_model )
+        self.addDockWidget( QtCore.Qt.LeftDockWidgetArea, self.outliner )
 
         # setup the attribute editor = TODO: This better
         self.splash.showMessage( "Editor: Attributes" )
         cam = Camera( "anon", -1 )
         mesh = Mesh()
         atribs = QDockingAttrs( self )
-        self.selection_observers.append( atribs )
         atribs.addSelectable( cam )
         atribs.addSelectable( mesh )
         self.addDockWidget( QtCore.Qt.LeftDockWidgetArea, atribs )
@@ -346,6 +336,7 @@ class QMain( QtWidgets.QMainWindow ):
         # activity monitor
         self.splash.showMessage( "Editor: Cameras" )
         self.cam_mon = QDockingCamActivityMon( self )
+        self.cam_mon.setModels( self.scene_model, self.selection_model )
         self.addDockWidget( QtCore.Qt.RightDockWidgetArea, self.cam_mon )
 
         # setup status bar

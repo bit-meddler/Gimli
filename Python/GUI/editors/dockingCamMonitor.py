@@ -6,41 +6,52 @@ docking Camera Activity Monitor
 import logging
 from PySide2 import QtCore, QtGui, QtWidgets, QtOpenGL
 
-from GUI.widgets import QFlowLayout
+from GUI import ROLE_INTERNAL_ID, ROLE_NUMROIDS, Nodes
 
 
 class QDockingCamActivityMon( QtWidgets.QDockWidget ):
 
-    class QCamButSettings( object ):
+    class CamDelegate( QtWidgets.QStyledItemDelegate ):
 
-        def __init__( self ):
-            self.BUT_SIZE = QtCore.QSize( 48, 48 )
+        BUT_SIZE  = QtCore.QSize( 48, 48 )
+        HIGH_RECT = QtCore.QRect(  1, 1, 46, 46 )
+        BUT_RECT  = QtCore.QRect(  3, 3, 41, 41 )
+        CHIP      = QtCore.QRect( 14, 7, 18, 18 )
 
-            self.HIGH_RECT = QtCore.QRect( 1, 1, 46, 46 ) # sz -1 px
-            self.BUT_RECT = QtCore.QRect( 3, 3, 41, 41 ) # sz - 3 px
-            self.CHIP = QtCore.QRect( 14, 7, 18, 18 ) # 20x20 centred in BUT_RECT
+        FONT      = QtGui.QFont(  "Arial", 12 )
 
-            self.FONT = QtGui.QFont( "Arial", 12 )
+        COL_OK    = QtGui.QColor( "green" )
+        COL_WARN  = QtGui.QColor( "red" )
+
+        A_HIGH    = 48
+        A_SEL     = 48
+        A_SEL_FIL = 69
+
+        def __init__( self, palette, parent=None ):
+            super( QDockingCamActivityMon.CamDelegate, self ).__init__( parent )
+
             self.FONT.setWeight( 60 )
 
-            self.PEN_GREY = QtGui.QPen()
-            self.PEN_GREY.setColor( QtGui.QColor( 134, 132, 130 ) )
-            self.PEN_GREY.setWidth( 1 )
-            self.PEN_GREY.setStyle( QtCore.Qt.SolidLine )
-            self.PEN_GREY.setCapStyle( QtCore.Qt.RoundCap )
-            self.PEN_GREY.setJoinStyle( QtCore.Qt.RoundJoin )
+            c = palette.color( QtGui.QPalette.Active, QtGui.QPalette.Shadow )
 
-            self.GRAD_GRAY = QtGui.QLinearGradient( 0, 0, 0, 38 )
-            self.GRAD_GRAY.setColorAt( 0.000, QtGui.QColor( 134, 132, 130,  0 ) )
-            self.GRAD_GRAY.setColorAt( 0.666, QtGui.QColor( 134, 132, 130, 32 ) )
-            self.GRAD_GRAY.setColorAt( 1.000, QtGui.QColor( 134, 132, 130, 64 ) )
+            self.PEN_OUTLINE = QtGui.QPen()
+            self.PEN_OUTLINE.setColor( QtGui.QColor( c ) )
+            self.PEN_OUTLINE.setWidth( 1 )
+            self.PEN_OUTLINE.setStyle( QtCore.Qt.SolidLine )
+            self.PEN_OUTLINE.setCapStyle( QtCore.Qt.RoundCap )
+            self.PEN_OUTLINE.setJoinStyle( QtCore.Qt.RoundJoin )
 
-            self.PEN_WHITE = QtGui.QPen()
-            self.PEN_WHITE.setColor( QtGui.QColor( "white" ) )
-            self.PEN_WHITE.setWidthF( 1.5 )
-            self.PEN_WHITE.setStyle( QtCore.Qt.SolidLine )
-            self.PEN_WHITE.setCapStyle( QtCore.Qt.RoundCap )
-            self.PEN_WHITE.setJoinStyle( QtCore.Qt.RoundJoin )
+            self.GRADIENT = QtGui.QLinearGradient( 0, 0, 0, 38 )
+            self.GRADIENT.setColorAt( 0.000, QtGui.QColor( c.red(), c.green(), c.blue(), 0 ) )
+            self.GRADIENT.setColorAt( 0.666, QtGui.QColor( c.red(), c.green(), c.blue(), 32 ) )
+            self.GRADIENT.setColorAt( 1.000, QtGui.QColor( c.red(), c.green(), c.blue(), 64 ) )
+
+            self.PEN_TEXT = QtGui.QPen()
+            self.PEN_TEXT.setColor( palette.color( QtGui.QPalette.Active, QtGui.QPalette.Text ) )
+            self.PEN_TEXT.setWidthF( 1.5 )
+            self.PEN_TEXT.setStyle( QtCore.Qt.SolidLine )
+            self.PEN_TEXT.setCapStyle( QtCore.Qt.RoundCap )
+            self.PEN_TEXT.setJoinStyle( QtCore.Qt.RoundJoin )
 
             self.CHIP_PATH = QtGui.QPainterPath()
             self.CHIP_PATH.addRoundedRect( self.CHIP, 2, 2 )
@@ -51,100 +62,100 @@ class QDockingCamActivityMon( QtWidgets.QDockWidget ):
             self.SEL_PATH = QtGui.QPainterPath()
             self.SEL_PATH.addRect( self.HIGH_RECT )
 
-            self.COL_OK   = QtGui.QColor( "green" )
-            self.COL_WARN = QtGui.QColor( "red" )
+            c = palette.color( QtGui.QPalette.Active, QtGui.QPalette.Highlight )
 
-            self.COL_BG  = QtGui.QColor( "black" )
-            self.COL_SEL = QtGui.QColor( "white" )
+            self.COL_SEL  = QtGui.QColor( c.red(), c.green(), c.blue(), self.A_SEL  )
+            self.COL_HIGH = QtGui.QColor( c.red(), c.green(), c.blue(), self.A_HIGH )
 
-            self.roid_overload_limit = 150 # this needs to be on a Knob
+            self.PEN_SEL = QtGui.QPen()
+            self.PEN_SEL.setColor( QtGui.QColor( c.red(), c.green(), c.blue(), self.A_SEL_FIL ) )
+            self.PEN_SEL.setWidth( 2 )
+            self.PEN_SEL.setStyle( QtCore.Qt.SolidLine )
 
 
-    class QCamButton( QtWidgets.QWidget ):
+            self.roid_overload_limit = 150  # this needs to be on a Knob
 
-        def __init__( self, parent, settings, cam_id ):
-            super( QDockingCamActivityMon.QCamButton, self ).__init__( parent )
+        def sizeHint( self, options, index ):
+            return self.BUT_SIZE
 
-            self.setSizePolicy( QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed )
+        def paint( self, painter, option, index ):
 
-            self.cam_id = cam_id
-            self.settings = settings
-            self.text = str( self.cam_id )
-            self.selected = False
-            self.roid_count = 0
+            canvas, state = option.rect, option.state
 
-        def sizeHint( self ):
-            return self.settings.BUT_SIZE
+            sel = bool( state & QtWidgets.QStyle.State_Selected  )
+            hov = bool( state & QtWidgets.QStyle.State_MouseOver )
 
-        def paintEvent( self, e ):
-            painter = QtGui.QPainter( self )
+            cam = int( index.data( ROLE_INTERNAL_ID ) )
+            num = int( index.data( ROLE_NUMROIDS ) )
 
-            painter.setPen( self.settings.PEN_GREY )
+            # Go to correct place
+            painter.save()
+            painter.translate( canvas.left(), canvas.top() )
 
-            painter.setBrush( self.settings.GRAD_GRAY )
-            painter.drawPath( self.settings.OUT_PATH )
+            # Highlight or hover
+            painter.setPen( self.PEN_SEL )
+            painter.setBrush( QtCore.Qt.NoBrush )
+            if( sel or hov ):
+                if( sel ):
+                    painter.fillPath( self.SEL_PATH, self.COL_SEL )
+                else:
+                    painter.fillPath( self.SEL_PATH, self.COL_HIGH )
+                painter.drawPath( self.SEL_PATH )
+
+            # draw the icon
+            painter.setPen( self.PEN_OUTLINE )
+            painter.setBrush( self.GRADIENT )
+            painter.drawPath( self.OUT_PATH )
             painter.setBrush( QtCore.Qt.NoBrush )
 
-            if( self.roid_count > 0 ):
-                if (self.roid_count >= self.settings.roid_overload_limit):
-                    painter.fillPath( self.settings.CHIP_PATH, self.settings.COL_WARN )
+            # draw the "Activity Chip"
+            if( num > 0 ):
+                if( num >= self.roid_overload_limit ):
+                    painter.fillPath( self.CHIP_PATH, self.COL_WARN )
                 else:
-                    painter.fillPath( self.settings.CHIP_PATH, self.settings.COL_OK )
+                    painter.fillPath( self.CHIP_PATH, self.COL_OK )
+            painter.drawPath( self.CHIP_PATH )
 
-            painter.drawPath( self.settings.CHIP_PATH )
+            # Draw the lable
+            painter.setPen( self.PEN_TEXT )
+            painter.drawText( self.BUT_RECT, QtCore.Qt.AlignCenter | QtCore.Qt.AlignBottom, str( cam ) )
 
-            painter.setPen( self.settings.PEN_WHITE )
-            if (self.text):
-                painter.setFont( self.settings.FONT )
-                painter.drawText( self.settings.BUT_RECT, QtCore.Qt.AlignCenter | QtCore.Qt.AlignBottom, self.text )
-
-            if (self.selected):
-                painter.drawPath( self.settings.SEL_PATH )
+            # Done
+            painter.restore()
 
 
     def __init__( self, parent ):
         super( QDockingCamActivityMon, self ).__init__( "CamActivityMon", parent )
         self.setObjectName( "CamMonDockWidget" )
-        self.setAllowedAreas( QtCore.Qt.LeftDockWidgetArea |
-                              QtCore.Qt.RightDockWidgetArea )
-
-        self.settings = QDockingCamActivityMon.QCamButSettings()
-
+        self.setAllowedAreas( QtCore.Qt.LeftDockWidgetArea | QtCore.Qt.RightDockWidgetArea )
         self.scroll_area = QtWidgets.QScrollArea( self )
         self.scroll_area.setWidgetResizable( True )
         hz = self.scroll_area.horizontalScrollBar()
         hz.setEnabled( False )
         self.scroll_area.setHorizontalScrollBarPolicy( QtCore.Qt.ScrollBarAlwaysOff )
 
-        self.canvas = QtWidgets.QWidget( self.scroll_area )
-        self.canvas.setMinimumWidth( 150 )
+        self._delegate = QDockingCamActivityMon.CamDelegate( self.palette() )
 
-        self.layout = QFlowLayout( self.canvas )
+        self.view = QtWidgets.QListView()
+        self.view.setViewMode( QtWidgets.QListView.IconMode )
+        self.view.setResizeMode( QtWidgets.QListView.Adjust )
+        self.view.setMinimumWidth( 150 )
+        self.view.setItemDelegate( self._delegate )
 
-        # change when we get proper MVC
-        self.cam_count = 0
-        self.roid_count_list = []
-        self.cam_list = []
-        self._populate()
-
-        self.scroll_area.setWidget( self.canvas )
+        self.scroll_area.setWidget( self.view )
         self.setWidget( self.scroll_area )
 
-    def addCam( self, cam_id ):
-        button = QDockingCamActivityMon.QCamButton( self.canvas, self.settings, cam_id )
-        self.layout.addWidget( button )
-        self.roid_count_list.append( 0 )
-        self.cam_list.append( button )
-        self.cam_count += 1
-        return button
+    def setModels( self, item_model, selection_model ):
+        old = self.view.selectionModel()
+        self.view.setModel( item_model )
+        self.view.setSelectionModel( selection_model )
+        del( old )
+        # root at correct place
+        cams_idx = item_model.genIndex( item_model.groups[ Nodes.TYPE_GROUP_MOCAP ] )
+        self.view.setRootIndex( cams_idx )
 
-    def updateRoidCount( self ):
-        for button, num in zip( self.cam_list, self.roid_count_list ):
-            button.roid_count = num
-            button.update()
+    def setRoidLimit( self, num_roids ):
+        self._delegate.roid_overload_limit = num_roids
 
-    def _populate( self ):
-        for i in range( 10 ):
-            button = self.addCam( i )
-            if (i == 4):
-                button.selected = True
+    def update( self ):
+        self.view.update()

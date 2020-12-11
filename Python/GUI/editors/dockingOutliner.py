@@ -18,15 +18,12 @@ class QDockingOutliner( QtWidgets.QDockWidget ):
 
     def _expandChildren( self, item ):
         """Todo: make this work with the MVC model"""
-        return None
-        for i in range( item.childCount() ):
+        """for i in range( item.childCount() ):
             self._expandChildren( item.child( i ) )
-        self.tree.expandItem( item )
+        self.tree.expandItem( item )"""
+        return None
 
     def _buildUI( self ):
-        #self.tree = self.SceneTree( self )
-        #self._populate()
-        # New MVC method
         self.tree = QtWidgets.QTreeView()
         self.tree.setHeaderHidden( True )
         self.tree.setSelectionBehavior( QtWidgets.QAbstractItemView.SelectRows )
