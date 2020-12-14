@@ -1,5 +1,6 @@
 # midget
 An Open Source MoCap system.
+_We’re dedicated to a mission beyond our ability._
 
 ## Rational
 I want to emulate the very best features of Giant, Vicon IQ, and the close seconds from Blade and Cortex in an Open Source non-profit system.  With commercial MoCap systems costing no less than $1000/camera, rpi based systems costing $70 per camera could be a great competitor... and open the possibility of MoCap based gait analysis and diagnostics in 3rd world and developing nations - who simply can't afford a $70k bottom end solution.
