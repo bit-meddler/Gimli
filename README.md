@@ -1,5 +1,6 @@
 # midget
 An Open Source MoCap system.
+
 _We’re dedicated to a mission beyond our ability._
 
 ## Rational
