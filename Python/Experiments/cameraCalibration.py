@@ -155,6 +155,7 @@ def computePair( A, B, frame_idxs, frames, labels ):
     # https://dellaert.github.io/19F-4476/Slides/S07-SFM-A.pdf
     # https://www.robots.ox.ac.uk/~vgg/hzbook/hzbook2/HZepipolar.pdf
     # http://users.umiacs.umd.edu/~ramani/cmsc828d/lecture27.pdf
+    # http://www.cse.psu.edu/~rtc12/CSE486/lecture19.pdf
     Es = []
     for idx in frame_idxs:
         strides, x2ds, _ = frames[ idx ]
@@ -173,7 +174,9 @@ def computePair( A, B, frame_idxs, frames, labels ):
     Es = np.asarray( Es, dtype=FLOAT_T )
     b  = -np.ones( (Es.shape[0],), dtype=FLOAT_T )
     F, residuals, rank, s = np.linalg.lstsq( Es, b )
-    
+    # Maybe I should use SVD, that was CD's answer for everything
+    # http://www.ctr.maths.lu.se/media11/FMAN85/2018/forelas6.pdf
+    # 
     # how do I get Projection matricies out of this???
 
 def sterioCalibrate( pairs, groups, frames, labels, matches, mats ):
