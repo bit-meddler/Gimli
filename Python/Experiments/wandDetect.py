@@ -39,7 +39,7 @@ def labelWand( dets, s_in, s_out, verbose=False ):
     if( num_dets != 5 ): # In the future could we survice 5+ candidates?
         return (None, None)
 
-    cam_dets = np.array(x2ds[ s_in:s_out ], dtype=np.float32)
+    cam_dets = np.array(dets[ s_in:s_out ], dtype=np.float32)
     dm = distanceMatrix( cam_dets )
 
     hyp_s = np.full( num_dets, 100.0, dtype=np.float32 )
