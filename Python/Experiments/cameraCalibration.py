@@ -15,6 +15,7 @@ from pprint import pprint
 
 from collections import Counter, defaultdict
 from Core.labelling import labelWandFrame
+from Core.math3D import FLOAT_T
 
 
 def pairPermuteSorted( items ):
@@ -149,7 +150,33 @@ def getListContaining( item, holder ):
             return X
     return [ item, ]
 
-def sterioCalibrate( pairs, groups ):
+def computePair( A, B, frame_idxs, frames, labels ):
+    # OK solve the fundamental matrix I guess....
+    # https://dellaert.github.io/19F-4476/Slides/S07-SFM-A.pdf
+    # https://www.robots.ox.ac.uk/~vgg/hzbook/hzbook2/HZepipolar.pdf
+    # http://users.umiacs.umd.edu/~ramani/cmsc828d/lecture27.pdf
+    Es = []
+    for idx in frame_idxs:
+        strides, x2ds, _ = frames[ idx ]
+        A_si, A_so = strides[A], strides[A+1]
+        B_si, B_so = strides[B], strides[B+1]
+        A_order = np.argsort( labels[idx][A_si:A_so] )
+        B_order = np.argsort( labels[idx][B_si:B_so] )
+
+        for i in range( A_so - A_si ):
+            xu,  xv  = x2ds[ A_si + A_order[i] ]
+            xu_, xv_ = x2ds[ B_si + B_order[i] ]
+
+            Es.append( [xu*xu_, xu*xv_, xu, xv*xu_, xv*xv_, xv, xu_, xv_] )
+
+    # I've no idea what I'm doing here
+    Es = np.asarray( Es, dtype=FLOAT_T )
+    b  = -np.ones( (Es.shape[0],), dtype=FLOAT_T )
+    F, residuals, rank, s = np.linalg.lstsq( Es, b )
+    
+    # how do I get Projection matricies out of this???
+
+def sterioCalibrate( pairs, groups, frames, labels, matches, mats ):
     # pair A & B
     # find the groups A & B are members of
     # Calibrate A & B, locking A at RT=np.eye(4)
@@ -164,7 +191,11 @@ def sterioCalibrate( pairs, groups ):
         if( gp_A in groups ): groups.remove( gp_A )
         if( gp_B in groups ): groups.remove( gp_B )
 
+        pair_frames = matches[ (A,B) ]
+
         # Todo: Computer Vision PhD at Oxon or Surrey
+
+        computePair( A, B, pair_frames, frames, labels )
 
         gp_A.extend( gp_B )
         new_groups.append( gp_A )
@@ -182,13 +213,14 @@ with open( os.path.join( DATA_PATH, "calibration.json" ), "r" ) as fh:
 
     # Prime the calibration with approx matching
     pair_counts, cams = matchReport( matches )
+    P_mats = [ np.zeros((4,4), dtype=FLOAT_T) for _ in cams ]
     ungrouped = sorted( list( cams ) )
     cam_groups = []
     all_cams_grouped = False
 
     while( not all_cams_grouped ):
         sterio_tasks, ungrouped = findGoodMarrage( pair_counts, cams, ungrouped, cam_groups )
-        cam_groups = sterioCalibrate( sterio_tasks, cam_groups )
+        cam_groups = sterioCalibrate( sterio_tasks, cam_groups, frames, ids, matches, P_mats )
         print( "Caled Cam Groups", cam_groups )
         if( len( cam_groups ) == 1 ):
             all_cams_grouped = True
