@@ -17,6 +17,8 @@ ID < -2147479552 (int32.min + 4096) is a range of "special Labels" to let altern
 
 import numpy as np
 
+from Core.math3D import FLOAT_T, ID_T
+from Core.mathUtils import argsortLite
 
 # Special IDs
 SID_BASE = -2147479552
@@ -94,7 +96,7 @@ def labelWand( dets, s_in, s_out, verbose=False ):
 
         # closest should be 1, 2nd closest 3 or 4 - Todo: except in degenerate poses!
         close = np.argpartition( row, 4 )[ :4 ]  # 2 + the zero
-        close = close[ np.argsort( row[ close ] ) ][ 1: ]
+        close = close[ argsortLite( row[ close ] ) ][ 1: ]
 
         # farthest should be 5
         far = np.argpartition( row, -1 )[ -1: ]
@@ -150,10 +152,27 @@ def labelWand( dets, s_in, s_out, verbose=False ):
 
             ids = [ 0, 0, 0, 0, 0 ]
 
-            ids[ close[ 0 ] ] = 1
-            ids[ i ] = 2
+            ids[ close[ 0 ] ]      = 1
+            ids[ i ]               = 2
             ids[ close[ winner ] ] = 3
-            ids[ close[ loser ] ] = 4
-            ids[ far[ 0 ] ] = 5
+            ids[ close[ loser ] ]  = 4
+            ids[ far[ 0 ] ]        = 5
 
     return (ids, best_score)
+
+
+def labelWandFrame( dets, strides ):
+    """
+    Labels the whole frame described by the dets array and the stride list.
+    returns ids array, and label report of which cameras got labelled
+    """
+    report = []
+    ids = np.full( len( dets ), 0, dtype=ID_T )
+
+    for cam, (s_in, s_out) in enumerate( zip( strides[:-1], strides[1:] ) ):
+        labels, score = labelWand( dets, s_in, s_out, False )
+        if( labels is not None ):
+            ids[ s_in : s_out ] = labels
+            report.append( cam )
+
+    return (ids, report)
