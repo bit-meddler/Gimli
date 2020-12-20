@@ -89,7 +89,7 @@ def permutePairings( A, B ):
 
 def findGoodMarrage( pair_counts, cams, ungrouped, grouped ):
     pairs = []
-    used_cams = set()
+    banned_cams = set()
 
     if( len( ungrouped ) > 0 ):
         # Prioritize marrying ungrouped cameras
@@ -97,10 +97,13 @@ def findGoodMarrage( pair_counts, cams, ungrouped, grouped ):
 
         while( len(available_pairs) > 1 ):
             pair = keyWithMax( available_pairs )
-            used_cams.add( pair[0] )
-            used_cams.add( pair[1] )
             pairs.append( pair )
-            available_pairs = restrictedDict( available_pairs, used_cams )
+            # test if either member of the pair is in a camera group,
+            # add that group's cameras to the 'used' list
+            for cam in [ pair[0], pair[1] ]:
+                banned_cams.update( getListContaining( cam, grouped ) )
+            available_pairs = restrictedDict( available_pairs, banned_cams )
+            print( "Pairing: Pair: {}, Wands: {}".format( pair, pair_counts[ pair ] ) )
 
     if( len( grouped ) > 0 ):
         # now if there are grouped cameras not joined in the ungrouped set,
@@ -109,10 +112,10 @@ def findGoodMarrage( pair_counts, cams, ungrouped, grouped ):
         # if an ungrouped camera has been paired with a camera that's a member of a group,
         # restrict that group's cameras this round
         for A, B in pairs:
-            used_cams.update( getListContaining( A, grouped ) )
-            used_cams.update( getListContaining( B, grouped ) )
+            banned_cams.update( getListContaining( A, grouped ) )
+            banned_cams.update( getListContaining( B, grouped ) )
 
-        available_pairs = restrictedDict( pair_counts, used_cams )
+        available_pairs = restrictedDict( pair_counts, banned_cams )
         available_groups = deepcopy( grouped )
 
         while( len( available_groups ) > 1 ):
@@ -136,11 +139,11 @@ def findGoodMarrage( pair_counts, cams, ungrouped, grouped ):
                 pair = keyWithMax( unionDict( available_pairs, permutePairings( gp_A, gp_B ) ) )
                 pairs.append( pair )
                 available_groups.remove( gp_B )
-                used_cams.update( gp_A )
-                used_cams.update( gp_B )
-                print( "Group A: {}, Group B: {}, pair: {}, wands: {}".format( gp_A, gp_B, pair, available_pairs[ pair ] ) )
+                banned_cams.update( gp_A )
+                banned_cams.update( gp_B )
+                print( "Merging Groups, Group A: {}, Group B: {}, Pair: {}, Wands: {}".format( gp_A, gp_B, pair, pair_counts[ pair ] ) )
 
-    remains = list( cams - used_cams )
+    remains = list( cams - banned_cams )
     return pairs, remains
 
 def getListContaining( item, holder ):
@@ -173,11 +176,26 @@ def computePair( A, B, frame_idxs, frames, labels ):
     # I've no idea what I'm doing here
     Es = np.asarray( Es, dtype=FLOAT_T )
     b  = -np.ones( (Es.shape[0],), dtype=FLOAT_T )
-    F, residuals, rank, s = np.linalg.lstsq( Es, b )
+    F, residuals, rank, s = np.linalg.lstsq( Es, b, rcond=None )
     # Maybe I should use SVD, that was CD's answer for everything
-    # http://www.ctr.maths.lu.se/media11/FMAN85/2018/forelas6.pdf
-    # 
-    # how do I get Projection matricies out of this???
+    # that's right SVD: https://www.youtube.com/watch?v=DDjfhYxqp3w&t=1736s
+    F = np.append( F, 1.0 )
+    U, s, V_T = np.linalg.svd( F.reshape( (3,3) ) )
+    W = np.asarray( [[0, -1, 0],
+                     [1,  0, 0],
+                     [0,  0, 1]], dtype=FLOAT_T )
+
+    u3 = U[:,2].reshape((3,1))
+
+    # Four permutations
+    P_1 = np.hstack( (U * W   * V_T,  u3) )
+    P_2 = np.hstack( (U * W   * V_T, -u3) )
+    P_3 = np.hstack( (U * W.T * V_T,  u3) )
+    P_4 = np.hstack( (U * W.T * V_T, -u3) )
+
+    # How do I triangulate the dets to 3Ds, with some slack?
+    
+    return None, None
 
 def sterioCalibrate( pairs, groups, frames, labels, matches, mats ):
     # pair A & B
@@ -198,7 +216,11 @@ def sterioCalibrate( pairs, groups, frames, labels, matches, mats ):
 
         # Todo: Computer Vision PhD at Oxon or Surrey
 
-        computePair( A, B, pair_frames, frames, labels )
+        P_A, P_B = computePair( A, B, pair_frames, frames, labels )
+
+        # if A or B in a group, do the rigid transform
+
+        # return the solved camea group
 
         gp_A.extend( gp_B )
         new_groups.append( gp_A )
@@ -212,11 +234,12 @@ def sterioCalibrate( pairs, groups, frames, labels, matches, mats ):
 with open( os.path.join( DATA_PATH, "calibration.json" ), "r" ) as fh:
     frames = json.load( fh )
 
+    # Damn, these detections are "native" (px) and need to be in NDCs
     ids, counts, matches = buildCaliData( frames )
 
     # Prime the calibration with approx matching
     pair_counts, cams = matchReport( matches )
-    P_mats = [ np.zeros((4,4), dtype=FLOAT_T) for _ in cams ]
+    P_mats = [ np.zeros((3,4), dtype=FLOAT_T) for _ in cams ]
     ungrouped = sorted( list( cams ) )
     cam_groups = []
     all_cams_grouped = False
@@ -224,7 +247,7 @@ with open( os.path.join( DATA_PATH, "calibration.json" ), "r" ) as fh:
     while( not all_cams_grouped ):
         sterio_tasks, ungrouped = findGoodMarrage( pair_counts, cams, ungrouped, cam_groups )
         cam_groups = sterioCalibrate( sterio_tasks, cam_groups, frames, ids, matches, P_mats )
-        print( "Caled Cam Groups", cam_groups )
+        print( "Cal'd Cam Groups: {}, leftover cameras: {}".format( cam_groups, ungrouped ) )
         if( len( cam_groups ) == 1 ):
             all_cams_grouped = True
 
