@@ -17,6 +17,14 @@ from collections import Counter, defaultdict
 from Core.labelling import labelWandFrame
 from Core.math3D import FLOAT_T
 
+def preCondition( frames ):
+    new = []
+    for (strides, dets, ids) in frames:
+        x2ds = np.asarray( dets, dtype=FLOAT_T )
+        x2ds -= 512.0
+        x2ds /= 512.0
+        new.append( [strides, list(x2ds), ids] )
+    return new
 
 def pairPermuteSorted( items ):
     # assuming sorted list of items, make tuple permutations
@@ -168,22 +176,49 @@ def computePair( A, B, frame_idxs, frames, labels ):
         B_order = np.argsort( labels[idx][B_si:B_so] )
 
         for i in range( A_so - A_si ):
-            xu,  xv  = x2ds[ A_si + A_order[i] ]
-            xu_, xv_ = x2ds[ B_si + B_order[i] ]
+            u,  v  = x2ds[ A_si + A_order[i] ]
+            u_, v_ = x2ds[ B_si + B_order[i] ]
+            Es.append( [u*u_, u*v_, u, v*u_, v*v_, v, u_, v_, 1] )
 
-            Es.append( [xu*xu_, xu*xv_, xu, xv*xu_, xv*xv_, xv, xu_, xv_] )
-
-    # I've no idea what I'm doing here
+    # SVD method
     Es = np.asarray( Es, dtype=FLOAT_T )
-    b  = -np.ones( (Es.shape[0],), dtype=FLOAT_T )
-    F, residuals, rank, s = np.linalg.lstsq( Es, b, rcond=None )
-    # Maybe I should use SVD, that was CD's answer for everything
-    # that's right SVD: https://www.youtube.com/watch?v=DDjfhYxqp3w&t=1736s
-    F = np.append( F, 1.0 )
+    U, s, V_T = np.linalg.svd( Es )
+    Fa = V_T[-1:].reshape( (3,3) )
+    
+    # Clamp to Rank 2
+    U, s, V_T = np.linalg.svd( Fa ) 
+    D = np.diag( s )
+    D[2,2] = 0
+    F = np.dot( np.dot( U, D ), V_T )
+    
+    print(F)
+
+    # test F's plausability
+    strides, x2ds, _ = frames[ frame_idxs[0] ]
+    A_si, A_so = strides[A], strides[A+1]
+    B_si, B_so = strides[B], strides[B+1]
+    A_order = np.argsort( labels[ frame_idxs[0] ][A_si:A_so] )
+    B_order = np.argsort( labels[ frame_idxs[0] ][B_si:B_so] )
+
+    results = []
+    for i in range( A_so - A_si ):
+        x,  y  = x2ds[ A_si + A_order[i] ]
+        x_, y_ = x2ds[ B_si + B_order[i] ]
+        v = np.asarray( [x,y,1], dtype=FLOAT_T )
+        b = np.dot( v, F )
+        x__, y__ = b[0]/b[2], b[1]/b[2] # divide out the scale, right?
+        results.append( "{:.5f},{:.5f} to {:.5f},{:.5f} F-> {:.5f},{:.5f}".format( x, y, x_, y_, x__, y__ ) )
+        
+    print( "\n".join( results ) )
+
+    # from the Radke lecture...
     U, s, V_T = np.linalg.svd( F.reshape( (3,3) ) )
     W = np.asarray( [[0, -1, 0],
                      [1,  0, 0],
                      [0,  0, 1]], dtype=FLOAT_T )
+    Z = np.asarray( [[ 0, 1, 0],
+                     [-1, 0, 0],
+                     [ 0, 0, 0]], dtype=FLOAT_T )
 
     u3 = U[:,2].reshape((3,1))
 
@@ -194,7 +229,7 @@ def computePair( A, B, frame_idxs, frames, labels ):
     P_4 = np.hstack( (U * W.T * V_T, -u3) )
 
     # How do I triangulate the dets to 3Ds, with some slack?
-    
+
     return None, None
 
 def sterioCalibrate( pairs, groups, frames, labels, matches, mats ):
@@ -206,6 +241,7 @@ def sterioCalibrate( pairs, groups, frames, labels, matches, mats ):
     # merge to a new group
     new_groups = []
     for A, B in pairs:
+        print( "Calibrating Pair ({}, {})".format( A, B ) )
         gp_A = getListContaining( A, groups )
         gp_B = getListContaining( B, groups )
 
@@ -230,23 +266,27 @@ def sterioCalibrate( pairs, groups, frames, labels, matches, mats ):
 
 
 
-#########################################################################################
+###########################################################################################
+
+# Todo: Need to use more than 20 frames, and provide ExampleData in the repo
+
 with open( os.path.join( DATA_PATH, "calibration.json" ), "r" ) as fh:
     frames = json.load( fh )
 
     # Damn, these detections are "native" (px) and need to be in NDCs
+    frames = preCondition( frames )
     ids, counts, matches = buildCaliData( frames )
 
     # Prime the calibration with approx matching
     pair_counts, cams = matchReport( matches )
-    P_mats = [ np.zeros((3,4), dtype=FLOAT_T) for _ in cams ]
+    # need to store, K, R, T, RT, P, and k1, k2 for each camera...
     ungrouped = sorted( list( cams ) )
     cam_groups = []
     all_cams_grouped = False
-
+    print( "Calibrating {} cameras: {}".format( len( cams ), cams ) )
     while( not all_cams_grouped ):
         sterio_tasks, ungrouped = findGoodMarrage( pair_counts, cams, ungrouped, cam_groups )
-        cam_groups = sterioCalibrate( sterio_tasks, cam_groups, frames, ids, matches, P_mats )
+        cam_groups = sterioCalibrate( sterio_tasks, cam_groups, frames, ids, matches, None )
         print( "Cal'd Cam Groups: {}, leftover cameras: {}".format( cam_groups, ungrouped ) )
         if( len( cam_groups ) == 1 ):
             all_cams_grouped = True
