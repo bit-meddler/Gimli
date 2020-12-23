@@ -12,7 +12,7 @@ import os, sys
 _git_root_ = os.path.dirname( os.path.dirname( os.path.dirname( os.path.dirname( os.path.realpath(__file__) ) ) ) )
 print( _git_root_ )
 CODE_PATH = os.path.join( _git_root_, "midget", "Python" )
-DATA_PATH = os.path.join( _git_root_, "rpiCap", "exampleData" )
+DATA_PATH = os.path.join( _git_root_, "midget", "ExampleData" )
 sys.path.append( CODE_PATH )
 
 # Logging
@@ -125,39 +125,22 @@ class Arbiter( object ):
 
     def _setupReplay( self ):
         # load up the replay files
-        cams = []
-        for i in range( 10 ):
-            replay_pkl_fq = os.path.join( DATA_PATH, self.replay + ".a2d_cam{:0>2}.pik".format( i ) )
-            with open( replay_pkl_fq, "rb" ) as fh:
-                cams.append( pickle.load( fh ) )
+        frames=[]
+        with open( os.path.join( DATA_PATH, self.replay + ".pik" ), "rb" ) as fh:
+            frames = pickle.load( fh )
 
         # repack each frame
-        self.num_frames = len( cams[0] )
+        self.num_frames = len( frames )
         empties = 0
-        #What do we do with non-square sensors? /=(1920/2) -= [1,1280/1920] - Do in arbiter
-        pixel_scale = 2.0 / 1024.0
-        for i in range( self.num_frames ):
-            frame = []
-            split = [0]
-            for j in range( 10 ):
-                rad = np.random.uniform( 0.455, 7.5, 1 )[0]
-                cam_frame = [ [x, y, rad] for x, y in cams[j][i] ] # add a radius col
-                frame.extend( cam_frame )
-                split.append( split[-1] + len(cam_frame) )
-
+        for (split, frame, ids) in frames:
             # I'll have that as NumPy, thanks
             np_frame = np.array( frame, dtype=np.float32 )
             np_split = np.array( split, dtype=np.int )
-
-            # Convert to NDC (should be done in DetMan / SysMan)
-
-            try:
-                np_frame *= pixel_scale # all pixel united info is normalized
-                np_frame[:,:2] -= 1. # re-center
-            except:
+            if( len(np_frame) == 0 ):
                 empties += 1
             self.frames.append( np_frame )
             self.splits.append( np_split )
+            
         print( "{} Empty frames".format( empties ) )
 
     def handleCNC( self, dgm ):
