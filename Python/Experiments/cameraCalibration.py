@@ -1,4 +1,4 @@
-"""
+""" First fumbellings into camera calibration.
 """
 # Workaround not being in PATH
 import os, sys
@@ -7,26 +7,18 @@ CODE_PATH = os.path.join( _git_root_, "midget", "Python" )
 DATA_PATH = os.path.join( _git_root_, "midget", "ExampleData" )
 sys.path.append( CODE_PATH )
 
+from collections import Counter, defaultdict
 from copy import deepcopy
 import numpy as np
 import pickle
 from pprint import pprint
 
-from collections import Counter, defaultdict
 from Core.labelling import labelWandFrame
 from Core.math3D import FLOAT_T
 
-def preCondition( frames ):
-    new = []
-    for (strides, dets, ids) in frames:
-        x2ds = np.asarray( dets, dtype=FLOAT_T )
-        x2ds -= 512.0
-        x2ds /= 512.0
-        new.append( [strides, list(x2ds), ids] )
-    return new
 
 def pairPermuteSorted( items ):
-    # assuming sorted list of items, make tuple permutations
+    """ assuming sorted list of items, make tuple permutations (was a comprehension, but hard to read)"""
     num = len( items )
     ret = []
     for i in range( num ):
@@ -34,28 +26,24 @@ def pairPermuteSorted( items ):
             ret.append( (items[i], items[j]) )
     return ret
 
-def __buildCaliData( frames ):
-    wand_counts = Counter()
-    matchings = defaultdict( list )
-    wand_ids = []
-    for idx, (strides, x2ds, ids) in enumerate( frames ):
-        ids, report = labelWandFrame( x2ds, strides )
-        if( len( report ) < 2 ):
-            continue # can't do anything with 0 or 1 wands
-
-        wand_ids.append( ids )
-        wand_counts.update( report )
-        for pair in pairPermuteSorted( report ):
-            matchings[ pair ].append( idx )
-
-    return ( wand_ids, wand_counts, matchings )
-
 def safeMin( listlike ):
+    """ min without puking on an empty list """
     if( len( listlike ) < 1 ):
         return 0
     return min( listlike )
 
 def buildCaliData( frames, target_frames, start, step ):
+    """ Try to find target_frames count of wands in every camera.  from start index
+        take step so we don't sample too many 'sequential' frames with little wand movement
+        hopefully this gives us random and average coverage over each caemra's sensor.
+
+        returns
+            counts:  (Counter) of wand counts - debug
+            matches: (dict)    dict indexed on tuple of camera id (camA,cmaB) being a list
+                               of frames where both cams see the wand
+            idx:     (int)     index that we got to when searching, in case we need to gather
+                               more wands (for refinement/buundel adjust)
+    """
     wand_counts = Counter()
     matchings = defaultdict( list )
 
@@ -86,12 +74,14 @@ def buildCaliData( frames, target_frames, start, step ):
     return ( wand_counts, matchings, idx )
 
 def wandLabelFrame( frames, idx ):
+    """ attempt to ID the wand on frame idx of frames, update that frame with the labels"""
     strides, x2ds, old_ids = frames[ idx ]
     ids, report = labelWandFrame( x2ds, strides )
     frames[ idx ] = (strides, x2ds, ids) # update with labels
     return report
 
 def matchReport( matchings ):
+    """ Count the number of 'wands' camera pairs have seen, also report on number of cameras seen."""
     pair_counts = {}
     observed_cameras = set()
     for k, v, in matchings.items():
@@ -104,6 +94,7 @@ def keyWithMax( d ):
     return max( d, key=lambda x:  d[x] )
 
 def restrictedDict( d, exclued ):
+    """ Return the subset of d not containing excluded (was a comprehension, but hard to read) """
     # sounds uncomfortable!
     ret = {}
     for k in d.keys():
@@ -112,6 +103,7 @@ def restrictedDict( d, exclued ):
     return ret
 
 def prioritizeDict( d, required ):
+    """ Return the subset of d containing keys with a member in required (was a comprehension, but hard to read) """
     ret = {}
     for k in d.keys():
         if( k[0]  in required or k[1]  in required ):
@@ -119,6 +111,7 @@ def prioritizeDict( d, required ):
     return ret
 
 def unionDict( d, keys ):
+    """ Return the subset of d containing keys (was a comprehension, but hard to read) """
     ret = {}
     for k in d.keys():
         if( k in keys ):
@@ -126,7 +119,7 @@ def unionDict( d, keys ):
     return ret
 
 def permutePairings( A, B ):
-    # assuming a & b are exclusive, pair all a-b elements
+    """ Assuming a & b are exclusive, pair all a-b elements """
     pairings = set()
     for a in A:
         for b in B:
@@ -136,6 +129,19 @@ def permutePairings( A, B ):
     return pairings
 
 def findGoodMarrage( pair_counts, cams, ungrouped, grouped ):
+    """ For UNGROUPED cameras:
+            1 Find the pair with most shared views of the wand
+            2 Remove these cameas from the 'available pairs'
+                2.1 if one of the pair is in a group, remove it's partners as well
+            3 until we run out
+        For GROUPED cameras:
+            1 find a pair linking two groups with most shared views of the wand
+            2 remove all cameras from these groups from the 'available pairs'
+            3 until we run out
+            4 if a group is left over, prevent it's cameras being mis diagnosed as Ungrouped
+            
+        Return the pairs to join, and any ungrouped cameas that need to be joined nex iteration
+    """
     pairs = []
     banned_cams = set()
 
@@ -154,42 +160,44 @@ def findGoodMarrage( pair_counts, cams, ungrouped, grouped ):
             print( "Pairing Cameras: {}, Wands: {}".format( pair, pair_counts[ pair ] ) )
 
     if( len( grouped ) > 0 ):
-        # now if there are grouped cameras not joined in the ungrouped set,
-        # find the optimal pivot and make those a pair
+        # If there are grouped cameras find the optimal pivot and make those a pair
 
         # if an ungrouped camera has been paired with a camera that's a member of a group,
         # restrict that group's cameras this round
+        # might be depricated! as we try to do this above...
         for A, B in pairs:
             banned_cams.update( getListContaining( A, grouped ) )
             banned_cams.update( getListContaining( B, grouped ) )
 
         available_pairs = restrictedDict( pair_counts, banned_cams )
-        available_groups = deepcopy( grouped )
+        available_groups = deepcopy( grouped ) # we'll be mutating available_groups
 
         while( len( available_groups ) > 1 ):
             gp_A = available_groups.pop()
             gp_B = None
             score = -1
+            optimal_pair = None
             for gp in available_groups:
                 candidate_pairs = permutePairings( gp_A, gp )
                 if( len( candidate_pairs ) < 1 ):
                     continue
-                possible = unionDict( available_pairs, candidate_pairs )
-                if( len( possible ) < 1 ):
+                candidate_matches = unionDict( available_pairs, candidate_pairs )
+                if( len( candidate_matches ) < 1 ):
                     continue
-                best = keyWithMax( possible )
+                best = keyWithMax( candidate_matches )
                 if( available_pairs[best] > score ):
                     gp_B = gp
-                    score = available_pairs[best]
+                    optimal_pair = best
+                    score = available_pairs[ optimal_pair ]
 
             if( gp_B is not None ):
                 # take this pairing
-                pair = keyWithMax( unionDict( available_pairs, permutePairings( gp_A, gp_B ) ) )
-                pairs.append( pair )
+                pairs.append( optimal_pair )
                 available_groups.remove( gp_B )
                 banned_cams.update( gp_A )
                 banned_cams.update( gp_B )
-                print( "Merging Groups, Group A: {}, Group B: {}, Pair: {}, Wands: {}".format( gp_A, gp_B, pair, pair_counts[ pair ] ) )
+                print( "Merging Groups, Group A: {}, Group B: {}, Pair: {}, Wands: {}".format(
+                    gp_A, gp_B, optimal_pair, pair_counts[ optimal_pair ] ) )
 
             if( len( available_groups ) == 1 ):
                 # a group we can't merge, B&!
@@ -206,20 +214,26 @@ def getListContaining( item, holder ):
     return [ item, ]
 
 def skew( x ):
+    """ Generate the Skew-Semetric matrix for vector x """
     return np.array([[    0, -x[2],  x[1] ],
                      [ x[2],     0, -x[0] ],
                      [-x[1],  x[0],     0 ] ])
 
 def computePair( A, B, frame_idxs, frames, clamp ):
-    # OK solve the fundamental matrix I guess....
-    # https://dellaert.github.io/19F-4476/Slides/S07-SFM-A.pdf
-    # https://www.robots.ox.ac.uk/~vgg/hzbook/hzbook2/HZepipolar.pdf
-    # http://users.umiacs.umd.edu/~ramani/cmsc828d/lecture27.pdf
-    # http://www.cse.psu.edu/~rtc12/CSE486/lecture19.pdf
+    """ OK solve the fundamental matrix I guess....
+            https://dellaert.github.io/19F-4476/Slides/S07-SFM-A.pdf
+            https://www.robots.ox.ac.uk/~vgg/hzbook/hzbook2/HZepipolar.pdf
+            http://users.umiacs.umd.edu/~ramani/cmsc828d/lecture27.pdf
+            http://www.cse.psu.edu/~rtc12/CSE486/lecture19.pdf
 
+        A note on notation, I'm writing e', P' etc as e_, P_, and it follows a
+        P'' would be P__.  However I'm also keeping track of np.svd emiting V transpose
+        by writing V_T - this doesn't mean V'T.  Sorry that's th ebest I've got
+    """
+    
     # Make pairwise matches
     matches = []
-    for idx in frame_idxs[:clamp]:
+    for idx in frame_idxs:
         strides, x2ds, labels = frames[ idx ]
         A_si, A_so = strides[A], strides[A+1]
         B_si, B_so = strides[B], strides[B+1]
@@ -232,14 +246,15 @@ def computePair( A, B, frame_idxs, frames, clamp ):
     # assemble the equations
     Es = []
     for A2d, B2d in matches:
-        u , v, _  = A2d # ignore bogo radius!
+        u , v , _ = A2d # ignore bogo radius!
         u_, v_, _ = B2d
         Es.append( [u*u_, u*v_, u, v*u_, v*v_, v, u_, v_, 1] )
 
     # SVD method
+    print( "solving {} Equations".format( len( Es ) ) )
     Es = np.asarray( Es, dtype=FLOAT_T )
     U, s, V_T = np.linalg.svd( Es )
-    Fa = V_T[:,-1].reshape( (3,3) )
+    Fa = V_T[:,-1].reshape( (3,3) ) # F aprox
     
     # Clamp to Rank 2
     U, s, V_T = np.linalg.svd( Fa ) 
@@ -248,15 +263,18 @@ def computePair( A, B, frame_idxs, frames, clamp ):
     F = np.dot( np.dot( U, D ), V_T )
 
     # test F's plausability
-    x,  y, _  = matches[0][0]
-    x_, y_, _ = matches[0][1]
-    u = np.asarray( [x,y,1], dtype=FLOAT_T )
-    v = np.asarray( [x_,y_,1], dtype=FLOAT_T )
-    zero = np.dot( np.dot(v, F), u )
-    epl = np.dot( u, F ) # F(x) -> epipolar line of x'
+    u,  v , _ = matches[0][0]
+    u_, v_, _ = matches[0][1]
+    x  = np.asarray( [u,v,1], dtype=FLOAT_T )
+    x_ = np.asarray( [u_,v_,1], dtype=FLOAT_T )
+    zero = np.dot( np.dot(x_, F), x )
+    epl = np.dot( x, F ) # F(x) -> epipolar line of x'
 
-    print( "Det:{:.3f} x:{:.3f},{:.3f} x':{:.3f},{:.3f} epl [{:.5f}, {:.5f}, {:.5f}] Ferr {:.5f}\n".format(
-        np.linalg.det(F), x, y, x_, y_, *epl, zero ) )
+    if( np.linalg.det(F) > 1e-8 ):
+        print( "Unaceptable Determinant!" )
+
+    print( "x:{:.3f},{:.3f} x':{:.3f},{:.3f} epl [{:.5f}, {:.5f}, {:.5f}] Ferr {:.5f}\n".format(
+        u, v, u_, v_, *epl, zero ) )
 
 
     # from the Radke lecture...
@@ -267,7 +285,7 @@ def computePair( A, B, frame_idxs, frames, clamp ):
 
     P_ = np.hstack( ( np.dot( skew(e_), F ) + e_, e_.reshape((3,1)) ) )
 
-
+    #pprint( P_ )
 
     # If essential matrix known...
     if( False ):
@@ -281,12 +299,12 @@ def computePair( A, B, frame_idxs, frames, clamp ):
 
         u3 = U[:,2].reshape((3,1))
 
-        # Four permutations
-        P_1 = np.hstack( (U * W   * V_T,  u3) )
-        P_2 = np.hstack( (U * W   * V_T, -u3) )
-        P_3 = np.hstack( (U * W.T * V_T,  u3) )
-        P_4 = np.hstack( (U * W.T * V_T, -u3) )
-
+        # Four permutations - or have I missed something?
+        P_1 = np.hstack( (np.dot(np.dot(U, W  ), V_T),  u3) )
+        P_2 = np.hstack( (np.dot(np.dot(U, W  ), V_T), -u3) )
+        P_3 = np.hstack( (np.dot(np.dot(U, W.T), V_T),  u3) )
+        P_4 = np.hstack( (np.dot(np.dot(U, W.T), V_T), -u3) )
+        
     # How do I triangulate the dets to 3Ds, with some slack?
 
     return None, None
@@ -311,7 +329,7 @@ def sterioCalibrate( pairs, groups, frames, matches, mats, clamp ):
 
         # Todo: Computer Vision PhD at Oxon or Surrey
 
-        #P_A, P_B = computePair( A, B, pair_frames, frames, clamp )
+        P_A, P_B = computePair( A, B, pair_frames, frames, clamp )
 
         # if A or B in a group, do the rigid transform
 
