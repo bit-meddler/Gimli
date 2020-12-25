@@ -300,13 +300,15 @@ class QMain( QtWidgets.QMainWindow ):
         self.getNewFrame()
 
         # Central Widget
-        #self.cam_view = QGLView()
+        self.splash.showMessage( "Creating The Main Viewport" )
         self.cam_view = QGLCameraView( self )
+        self.cam_view.setModels( self.scene_model, self.selection_model )
+        self.selection_model.selectionChanged.connect( self.cam_view.onSelectionChanged )
         self.frame_observers.append( self.cam_view )
         self.setCentralWidget( self.cam_view )
         # DANGER another dumb hack
-        self.cam_view._qgl_pane.cam_list = [ x for x in range(10) ]
-        self.cam_view._camlistChanged()
+        #self.cam_view._qgl_pane.cam_list = [ x for x in range(10) ]
+        #self.cam_view._camlistChanged()
 
         # Add docables
         self.splash.showMessage( "Creating Dockable Editors" )
