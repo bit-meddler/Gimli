@@ -1049,9 +1049,13 @@ def decodePacket( data ):
 
 # Class
 class PiCamera( object ):
-    """ Class to handle management of a Camera's state.
+    """ ==== D E P R I C A T E D ====
+
+        Class to handle management of a Camera's state.
         Also provides conveniences to dump as a 'bulk' statement, and JSON
         import / export functions
+
+        This is a bit Crap, and only used in a couple of experiments anyway.
     """
     def __init__( self, camera_ip, id=None ):
         self.camera_ip = camera_ip

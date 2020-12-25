@@ -10,8 +10,10 @@ from PySide2 import QtCore, QtGui, QtWidgets, QtOpenGL
 import ctypes
 from OpenGL import GL, GLU, GLUT
 
-from Core.math3D import genOrthoProjectionPlains, FLOAT_T, TWO_PI
-from GUI import getStdIcon
+from Core.math3D import genOrthoProjectionPlains, FLOAT_T, ID_T, TWO_PI
+import Core.labelling as lid
+
+from GUI import getStdIcon, Nodes, ROLE_INTERNAL_ID, ROLE_NUMROIDS, ROLE_TYPEINFO
 
 SQUARES = [ x ** 2 for x in range( 9 ) ]
 
@@ -36,6 +38,88 @@ class Shaders( object ):
         }
     }
     """
+    # ISSUE #9
+    dot_vtx2_src = """
+    # version 330 core
+
+    layout( location=0 ) in vec3 a_position ;
+    layout( location=1 ) in int  a_id ;
+    
+    uniform mat4 u_projection ;
+    
+    // colour tables
+    uniform vec3 u_cols[{num_cols}] ;
+    uniform vec3 u_sids[{num_sids}] ;
+    
+    out vec3 v_colour ;
+    
+    void main() {{
+        gl_Position  = u_projection * vec4( a_position.x, a_position.y, 0.0, 1.0 ) ;
+        gl_PointSize = a_position.z * 2.0 ;
+        if( a_id < 0 ) {{
+            // frozen or a sid
+            if( a_id <= {sid_bound} ) {{
+                v_colour = u_sids[ abs( a_id + {sid_conv} ) ] ;
+            }} else {{
+                v_colour = vec3( 0.0, 0.0, 1.0 ) ;
+            }}
+        }} else {{
+            v_colour = u_cols[ a_id ] ;
+        }}
+    }}
+    """ # It's supposed to work like this...
+
+    dot_vtx_src3 = """
+    # version 330 core
+
+    layout( location=0 ) in vec3 a_position ;
+    layout( location=1 ) in int  a_id ;
+    
+    uniform mat4 u_projection ;
+    
+    out vec3 v_colour ;
+    
+    void main() {
+        gl_Position  = u_projection * vec4( a_position.x, a_position.y, 0.0, 1.0 ) ;
+        gl_PointSize = a_position.z * 2.0 ;
+        vec3 sel_col ;
+        
+        if( a_id <= 0 ) {
+            // frozen or a sid
+            if( a_id < -2147479551 ) {
+                int s_id = abs( a_id + 2147479552 ) ;
+                
+                if(        s_id == 0 ) {
+                    sel_col = vec3( 1.0, 1.0, 1.0 ) ;
+                } else if( s_id == 1 ) {
+                    sel_col = vec3( 1.0, 0.0, 0.0 ) ;
+                } else if( s_id == 2 ) {
+                    sel_col = vec3( 0.0, 1.0, 0.0 ) ;
+                } else if( s_id == 3 ) {
+                    sel_col = vec3( 0.0, 0.0, 1.0 ) ;
+                }
+            } else {
+                sel_col = vec3( 0.0, 0.0, 1.0 ) ; // <-------------------------
+            }
+        } else {
+            // A label
+            sel_col = vec3( 1.0, 1.0, 1.0 ) ;
+            
+            if(        a_id == 1 ) {
+                sel_col = vec3( 1.0, 0.0, 0.0 ) ;
+            } else if( a_id == 2 ) {
+                sel_col = vec3( 1.0, 1.0, 0.0 ) ;
+            } else if( a_id == 3 ) {
+                sel_col = vec3( 0.0, 1.0, 0.0 ) ;
+            } else if( a_id == 4 ) {
+                sel_col = vec3( 0.0, 1.0, 1.0 ) ;
+            } else if( a_id == 5 ) {
+                sel_col = vec3( 0.0, 0.0, 1.0 ) ;
+            }
+        }
+        v_colour = sel_col ;
+    }
+    """ # Nasty Hack - Hard Coded Colours
     dot_frg_src = """
     # version 330 core
     
@@ -47,6 +131,7 @@ class Shaders( object ):
         color = vec4( v_colour, 1.0 ) ;
     }
     """
+    # ISSUE #8
     dot_geo_src = """
     #version 330 core
 
@@ -87,6 +172,7 @@ class Shaders( object ):
     """
     @staticmethod
     def genGeoSdr( divisions=12 ):
+        # ISSUE #8
         ret = """
     #version 330 core
     
@@ -95,13 +181,14 @@ class Shaders( object ):
     
     void circle( vec4 position, float radius ) {{
         """.format( divisions )
+
         step = TWO_PI / divisions
         for i in range( divisions ):
             x = np.cos( i * step )
             y = np.sin( i * step )
             x = 0.0 if np.abs(x) < 1.0e-8 else x
             y = 0.0 if np.abs(y) < 1.0e-8 else y
-            ret += """gl_Position = position + (vec4({x}, {y}, 0.0, 0.0) * radius) ;
+            ret += """gl_Position = position + (vec4({x:.5f}, {y:.5f}, 0.0, 0.0) * radius) ;
         EmitVertex() ;
         """.format( x=x, y=y )
 
@@ -112,6 +199,7 @@ class Shaders( object ):
         circle( gl_in[0].gl_Position, gl_in[0].gl_PointSize ) ;
     }  
     """
+
         return ret
 
 
@@ -120,7 +208,7 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
     ZOOM_SCALE    = 1.075
     TRUCK_SCALE   = 0.01
     DEFAULT_WIDTH = 2.5
-    DEFAULT_ZOOM  = 0.98
+    DEFAULT_ZOOM  = 1.075
 
     def __init__(self, parent=None ):
         super(QGLCameraPane, self).__init__( parent )
@@ -130,9 +218,13 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
 
         self._subwindow_sz = (0, 0)
 
+        self._camera_group = None # reference to all cameras
         self.cam_list = []
         self.num_cams = 0
         self.draw_lead = False
+        # reference to Controls in the status bar
+        self._lead_button  = None
+        self._label_button = None
 
         # Global Camera settings
         self.clip_nr = -100.0
@@ -160,21 +252,31 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
         # The Reticule (pairs for glLines)
         # In the future there may be other reticules so bound non-square sensors
         self._reticule = np.array(
-            [ [-1.0,  1.0, 0.0], [ 1.0,  1.0, 0.0], # Box
-              [ 1.0,  1.0, 0.0], [ 1.0, -1.0, 0.0],
-              [ 1.0, -1.0, 0.0], [-1.0, -1.0, 0.0],
-              [-1.0, -1.0, 0.0], [-1.0,  1.0, 0.0],
+            [ [-1.0,  1.0, 0.0], [ 1.0,   1.0,  0.0], # Box
+              [ 1.0,  1.0, 0.0], [ 1.0,  -1.0,  0.0],
+              [ 1.0, -1.0, 0.0], [-1.0,  -1.0,  0.0],
+              [-1.0, -1.0, 0.0], [-1.0,   1.0,  0.0],
               # ticks
-              [-1.0, 0.0, 0.0], [-0.95,   0.0, 0.0],
-              [ 1.0, 0.0, 0.0], [ 0.95,   0.0, 0.0],
-              [ 0.0,-1.0, 0.0], [  0.0, -0.95, 0.0],
-              [ 0.0, 1.0, 0.0], [  0.0,  0.95, 0.0],
+              [-1.0,  0.0, 0.0], [-0.95,  0.0,  0.0],
+              [ 1.0,  0.0, 0.0], [ 0.95,  0.0,  0.0],
+              [ 0.0, -1.0, 0.0], [ 0.0,  -0.95, 0.0],
+              [ 0.0,  1.0, 0.0], [ 0.0,   0.95, 0.0],
               ], dtype=FLOAT_T ) # 16 Elems, 128 Bytes
-        self._reticule *= 0.99 # just smaller than NDC limits?
+        # ISSUE #9
+        self._reticule_ids = np.array(
+            [ lid.SID_WHITE,     lid.SID_WHITE,
+              lid.SID_WHITE,     lid.SID_WHITE,
+              lid.SID_WHITE,     lid.SID_WHITE,
+              lid.SID_WHITE,     lid.SID_WHITE,
+
+              lid.SID_WHITE,     lid.SID_RED,
+              lid.SID_WHITE,     lid.SID_RED,
+              lid.SID_WHITE,     lid.SID_GREEN,
+              lid.SID_WHITE,     lid.SID_GREEN,
+              ], dtype=ID_T )
+
         self._reticule_sz = 16
         self._reticule_block_sz = len( self._reticule )
-
-        self._reticule_ids = np.full( self._reticule_block_sz, -1, dtype=np.int32 )
 
         # prep GL Buffer Objects
         self._vao_cameras = None
@@ -188,12 +290,38 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
     def initializeGL( self ):
         GL.glClearColor( 0.0, 0.0, 0.0, 1.0 )
 
+        # ISSUE #9
+        # prepare colours
+        self._cols_sid = np.asarray( lid.SID_COLOURS, dtype=FLOAT_T )
+
+        id_cols = [ [1.0, 1.0, 1.0] ]
+        id_cols.extend( lid.WAND_COLOURS )
+        self._cols_ids = np.asarray( id_cols, dtype=FLOAT_T )
+
+        # ISSUE #9
+        # compose the shader program
+        dot_vtx_src = Shaders.dot_vtx2_src.format( num_cols=len( self._cols_ids ),
+                                                   num_sids=len( self._cols_sid ), sid_bound=lid.SID_BASE+1, sid_conv=lid.SID_CONV )
+
         # Setup Dot shader
         self.shader = QtGui.QOpenGLShaderProgram( self.context() )
 
-        self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, Shaders.dot_vtx_src  )
-        self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Fragment, Shaders.dot_frg_src )
-        self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Geometry, Shaders.dot_geo_src )
+        #add_ok = self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, dot_vtx_src )
+        add_ok = self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, Shaders.dot_vtx_src3  )
+        if (not add_ok):
+            print( "Add Error", self.shader.log() )
+            exit()
+
+        add_ok = self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Fragment, Shaders.dot_frg_src )
+        if (not add_ok):
+            print( "Add Error", self.shader.log() )
+            exit()
+
+        # ISSUE #8
+        # add_ok = self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Geometry, Shaders.dot_geo_src )
+        if (not add_ok):
+            print( "Add Error", self.shader.log() )
+            exit()
 
         self.shader_attr_locs[ "a_position" ] = 0
         GL.glEnableVertexAttribArray( self.shader_attr_locs[ "a_position" ] )
@@ -203,7 +331,10 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
         GL.glEnableVertexAttribArray( self.shader_attr_locs[ "a_id" ] )
         GL.glBindAttribLocation( self.shader.programId(), self.shader_attr_locs[ "a_id" ], "a_id" )
 
-        self.shader.link()
+        link_ok = self.shader.link()
+        if( not link_ok ):
+            print( "Error", self.shader.log() )
+            exit()
         self.shader.bind()
 
         # camera VAO
@@ -214,22 +345,34 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
         # configure position Attrib
         self._vbo_dets = GL.glGenBuffers( 1 )
         GL.glBindBuffer( GL.GL_ARRAY_BUFFER, self._vbo_dets )
-        GL.glVertexAttribPointer( 0, 3, GL.GL_FLOAT, GL.GL_FALSE, 0, ctypes.c_void_p( 0 ) )
+        GL.glVertexAttribPointer( self.shader_attr_locs[ "a_position" ], 3, GL.GL_FLOAT, GL.GL_FALSE, 0, ctypes.c_void_p( 0 ) )
 
         # the id attrib
         self._vbo_ids = GL.glGenBuffers( 1 )
         GL.glBindBuffer( GL.GL_ARRAY_BUFFER, self._vbo_ids )
-        GL.glVertexAttribPointer( 1, 1, GL.GL_INT, GL.GL_FALSE, 0, ctypes.c_void_p( 0 ) )
+        GL.glVertexAttribPointer( self.shader_attr_locs[ "a_id" ], 1, GL.GL_INT, GL.GL_FALSE, 0, ctypes.c_void_p( 0 ) )
 
         # Setup uniform for Camera navigation
         self._proj_loc = self.shader.uniformLocation( "u_projection" )
 
+        # ISSUE #9
+        # set up colour uniforms
+        self._cols_loc = self.shader.uniformLocation( "u_cols[0]" )
+        self._sids_loc = self.shader.uniformLocation( "u_sids[0]" )
+
+        # ISSUE #9
+        # load colour uniforms
+        print( self._cols_ids )
+        print( self._cols_sid )
+        #GL.glUniform3fv( self._cols_loc, len( self._cols_ids ), self._cols_ids )
+        #GL.glUniform3fv( self._sids_loc, len( self._cols_sid ), self._cols_sid )
+
         self.shader.release()
 
         # Misc
-        GL.glHint( GL.GL_POINT_SMOOTH_HINT, GL.GL_NICEST )
-        GL.glEnable( GL.GL_PROGRAM_POINT_SIZE )
-        #GL.glEnable( GL.GL_DEPTH_TEST )
+        #GL.glHint( GL.GL_POINT_SMOOTH_HINT, GL.GL_NICEST )
+        # ISSUE #8
+        #GL.glEnable( GL.GL_PROGRAM_POINT_SIZE )
 
         # HACK!
         # dummy data so reticules are drawn
@@ -268,9 +411,9 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
         # get the right buffer ? - guess not
         #GL.glBindBuffer( GL.GL_ARRAY_BUFFER, self._vbo_dets )
 
-        # set dot size
-        #GL.glPointSize( 2 )
-        GL.glEnable( GL.GL_POINT_SMOOTH )
+        # # ISSUE #8 - set dot size
+        GL.glPointSize( 2 )
+        #GL.glEnable( GL.GL_POINT_SMOOTH )
 
         self.shader.bind()
 
@@ -433,8 +576,8 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
 
             self.updateProjection( cam_idx )
         else:
-            print( cam_idx, self._ortho_navigation[ cam_idx ] )
-            self.modeToggle()
+            #print( cam_idx, self._ortho_navigation[ cam_idx ] )
+            self._lead_button.toggle()
             if( self.draw_lead ):
                 # clicked camera is lead
                 self.reorderCamList( cam_idx )
@@ -464,11 +607,21 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
         else:
             my_ids = np.asarray( ids, dtype=np.int32 )
 
-        packed_data = np.concatenate( (self._reticule_ids, my_ids) )
+        # attempt to label
+        if( self._label_button.isChecked() ):
+            for i, (s_in, s_out) in enumerate( zip( self.stride_list[:-1], self.stride_list[1:] ) ):
+                labels, score = lid.labelWand( my_dets, s_in, s_out, False )
+                if( labels is not None ):
+                    my_ids[s_in:s_out] = labels
+                    #print( "labelled wand in camera {}".format(i) )
+
+        packed_data2 = np.concatenate( (self._reticule_ids, my_ids) )
+
+        #print( packed_data2 )
 
         # load to VBO
         GL.glBindBuffer( GL.GL_ARRAY_BUFFER, self._vbo_ids )
-        GL.glBufferData( GL.GL_ARRAY_BUFFER, packed_data.nbytes, packed_data, GL.GL_STATIC_DRAW )
+        GL.glBufferData( GL.GL_ARRAY_BUFFER, packed_data2.nbytes, packed_data2, GL.GL_STATIC_DRAW )
 
         # call redraw
         self.update()
@@ -483,10 +636,13 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
     def _camlistChanged( self ):
         self.num_cams = len( self.cam_list )
         self._rc = self.genDimsSquare( self.num_cams )
+
         self._marshelStrides()
 
         # Hack: This should be a sceneMan thing.
         self.resetAllCams()
+
+        self.resizeGL( *self._wh ) # recalculate the sub windows & redraw
 
     def resetAllCams( self ):
         # Populate cameras with Ortho Navigation
@@ -527,7 +683,7 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
             self.cam_list.append( lead )
 
     def modeToggle( self ):
-        self.draw_lead = not self.draw_lead
+        self.draw_lead = bool( self._lead_button.isChecked() )
         width, height = self._wh
         if( self.draw_lead ):
             self._rc = self.genDimsSquare( 1 )
@@ -578,22 +734,50 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
 # ah. no it needs to be in a widget
 class QGLCameraView( QtWidgets.QMainWindow ):
 
-    def __init__( self, parent ):
+    def __init__( self, parent, live=True ):
         super( QGLCameraView, self ).__init__()
 
+        # selection Model and data Model
+        self._select = None
+        self._model  = None
+
+        #live or offline
+        self.live = live
         self._qgl_pane = QGLCameraPane( self )
-
         self._setupToolBar()
-
+        self._qgl_pane._lead_button  = self.lead_mode
+        self._qgl_pane._label_button = self.label_mode
         self.setCentralWidget( self._qgl_pane )
 
         self._qgl_pane.update()
 
-    def _camlistChanged( self ):
-        self._qgl_pane._camlistChanged()
+    def setModels( self, item_model, selection_model ):
+        self._model = item_model
+        self._model.dataChanged.connect( self.onDataChange )
+        self._select = selection_model
+        # the camera groups
+        # todo: 'default' to all cameras in the group....
+        self._qgl_pane._camera_group = item_model.groups[ Nodes.TYPE_GROUP_MOCAP ]
 
-    def acceptNewData( self, dets, strides, ids ):
-        self._qgl_pane.acceptNewData( dets, strides, ids )
+    def onDataChange( self, change_idx ):
+        self._qgl_pane.acceptNewData( self._model.dets_dets, self._model.dets_strides, None )
+
+    def onSelectionChanged( self, selected, deselected ):
+        if( self._select is None ):
+            return
+
+        # walk selected and find cameras
+        cam_list = []
+        last_cam = -1
+        for idx in self._select.selection().indexes():
+            if( idx.data( role=ROLE_TYPEINFO ) == Nodes.TYPE_CAMERA_MC_PI ):
+                cam = idx.data( role=ROLE_INTERNAL_ID )
+                cam_list.append( cam )
+                last_cam = cam
+
+        self._qgl_pane.cam_list = cam_list
+        self._qgl_pane.reorderCamList( lead=last_cam )
+        self._qgl_pane._camlistChanged()
 
     def _setupToolBar( self ):
         toolbar = QtWidgets.QToolBar( "Camera view tools" )
@@ -601,6 +785,7 @@ class QGLCameraView( QtWidgets.QMainWindow ):
         toolbar.setMovable( False )
         self.addToolBar( toolbar )
 
+        # Display Options
         self.lead_mode = QtWidgets.QToolButton( self )
         self.lead_mode.setIcon( getStdIcon( QtWidgets.QStyle.SP_ArrowUp ) )
         self.lead_mode.setStatusTip( "Focus Lead" )
@@ -625,3 +810,29 @@ class QGLCameraView( QtWidgets.QMainWindow ):
         self.reset_all.clicked.connect( self._qgl_pane.resetAllCams )
         toolbar.addWidget( self.reset_all )
 
+        # Labelling Options
+        self.label_mode = QtWidgets.QToolButton( self )
+
+        # only draw if live
+        if( not self.live ):
+            return
+
+        toolbar.addSeparator()
+
+        # Toggling Icon
+        two_state = QtGui.QIcon()
+        temp_pm = getStdIcon( QtWidgets.QStyle.SP_DialogYesButton ).pixmap(128)
+        two_state.addPixmap( temp_pm, QtGui.QIcon.Normal, QtGui.QIcon.On )
+        temp_pm = getStdIcon( QtWidgets.QStyle.SP_DialogNoButton ).pixmap(128)
+        two_state.addPixmap( temp_pm,  QtGui.QIcon.Normal, QtGui.QIcon.Off )
+
+        self.label_mode.setIcon( two_state )
+        self.label_mode.setStatusTip( "Label Wand" )
+        self.label_mode.setToolTip( "Enable Visual Wand Labelling" )
+        self.label_mode.setCheckable( True )
+        toolbar.addWidget( self.label_mode )
+
+        # Todo: Write a 3-mkr detector, allow these to toggle something
+        self.selector = QtWidgets.QComboBox()
+        self.selector.addItems( ["5-mkr Wand", "3-mkr Wand", "1 Point"] )
+        toolbar.addWidget( self.selector )
