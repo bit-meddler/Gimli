@@ -306,11 +306,8 @@ class QMain( QtWidgets.QMainWindow ):
         self.selection_model.selectionChanged.connect( self.cam_view.onSelectionChanged )
         self.frame_observers.append( self.cam_view )
         self.setCentralWidget( self.cam_view )
-        # DANGER another dumb hack
-        #self.cam_view._qgl_pane.cam_list = [ x for x in range(10) ]
-        #self.cam_view._camlistChanged()
 
-        # Add docables
+        # Add dockables
         self.splash.showMessage( "Creating Dockable Editors" )
         self.splash.showMessage( "Editor: Log" )
         logDockWidget = QDockingLog( self )

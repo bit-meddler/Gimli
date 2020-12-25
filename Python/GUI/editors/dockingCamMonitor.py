@@ -139,6 +139,7 @@ class QDockingCamActivityMon( QtWidgets.QDockWidget ):
         self.view = QtWidgets.QListView()
         self.view.setViewMode( QtWidgets.QListView.IconMode )
         self.view.setResizeMode( QtWidgets.QListView.Adjust )
+        self.view.setSelectionMode( QtWidgets.QAbstractItemView.ExtendedSelection )
         self.view.setMinimumWidth( 150 )
         self.view.setItemDelegate( self._delegate )
 

@@ -13,7 +13,7 @@ from OpenGL import GL, GLU, GLUT
 from Core.math3D import genOrthoProjectionPlains, FLOAT_T, ID_T, TWO_PI
 import Core.labelling as lid
 
-from GUI import getStdIcon, ROLE_INTERNAL_ID, ROLE_NUMROIDS
+from GUI import getStdIcon, Nodes, ROLE_INTERNAL_ID, ROLE_NUMROIDS, ROLE_TYPEINFO
 
 SQUARES = [ x ** 2 for x in range( 9 ) ]
 
@@ -218,8 +218,10 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
 
         self._subwindow_sz = (0, 0)
 
+        self._camera_group = None # reference to all cameras
         self.cam_list = []
         self.num_cams = 0
+        self._lead_button = None # reference to the "lead toggle" button
         self.draw_lead = False
 
         # Global Camera settings
@@ -297,7 +299,7 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
         # ISSUE #9
         # compose the shader program
         dot_vtx_src = Shaders.dot_vtx2_src.format( num_cols=len( self._cols_ids ),
-                        num_sids=len( self._cols_sid ), sid_bound=lid.SID_BASE+1, sid_conv=lid.SID_CONV )
+                                                   num_sids=len( self._cols_sid ), sid_bound=lid.SID_BASE+1, sid_conv=lid.SID_CONV )
 
         # Setup Dot shader
         self.shader = QtGui.QOpenGLShaderProgram( self.context() )
@@ -572,8 +574,8 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
 
             self.updateProjection( cam_idx )
         else:
-            print( cam_idx, self._ortho_navigation[ cam_idx ] )
-            self.modeToggle()
+            #print( cam_idx, self._ortho_navigation[ cam_idx ] )
+            self._lead_button.toggle()
             if( self.draw_lead ):
                 # clicked camera is lead
                 self.reorderCamList( cam_idx )
@@ -586,6 +588,9 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
 
 
     # functional ---------------------------------------------------------------
+    def attachLeadButton( self, button ):
+        self._lead_button = button
+
     def acceptNewData( self, dets, strides, ids ):
         self.stride_list = np.asarray( strides, dtype=np.int32 )
 
@@ -631,10 +636,13 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
     def _camlistChanged( self ):
         self.num_cams = len( self.cam_list )
         self._rc = self.genDimsSquare( self.num_cams )
+
         self._marshelStrides()
 
         # Hack: This should be a sceneMan thing.
         self.resetAllCams()
+
+        self.resizeGL( *self._wh ) # recalculate the sub windows & redraw
 
     def resetAllCams( self ):
         # Populate cameras with Ortho Navigation
@@ -675,7 +683,7 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
             self.cam_list.append( lead )
 
     def modeToggle( self ):
-        self.draw_lead = not self.draw_lead
+        self.draw_lead = bool( self._lead_button.isChecked() )
         width, height = self._wh
         if( self.draw_lead ):
             self._rc = self.genDimsSquare( 1 )
@@ -733,10 +741,10 @@ class QGLCameraView( QtWidgets.QMainWindow ):
         self._select = None
         self._model  = None
 
+
         self._qgl_pane = QGLCameraPane( self )
-
         self._setupToolBar()
-
+        self._qgl_pane.attachLeadButton( self.lead_mode )
         self.setCentralWidget( self._qgl_pane )
 
         self._qgl_pane.update()
@@ -744,10 +752,8 @@ class QGLCameraView( QtWidgets.QMainWindow ):
     def setModels( self, item_model, selection_model ):
         self._model = item_model
         self._select = selection_model
-
-    def _camlistChanged( self ):
-        # Depricated
-        self._qgl_pane._camlistChanged()
+        # the camera groups
+        self._qgl_pane._camera_group = item_model.groups[ Nodes.TYPE_GROUP_MOCAP ]
 
     def onSelectionChanged( self, selected, deselected ):
         if( self._select is None ):
@@ -757,10 +763,11 @@ class QGLCameraView( QtWidgets.QMainWindow ):
         cam_list = []
         last_cam = -1
         for idx in self._select.selection().indexes():
-            cam = idx.data( role=ROLE_INTERNAL_ID )
-            cam_list.append( cam )
-            last_cam = cam
-        print( cam_list )
+            if( idx.data( role=ROLE_TYPEINFO ) == Noeds.PI_CAMERA ):
+                cam = idx.data( role=ROLE_INTERNAL_ID )
+                cam_list.append( cam )
+                last_cam = cam
+
         self._qgl_pane.cam_list = cam_list
         self._qgl_pane.reorderCamList( lead=last_cam )
         self._qgl_pane._camlistChanged()

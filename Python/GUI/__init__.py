@@ -219,7 +219,7 @@ class SceneModel( QtCore.QAbstractItemModel ):
             return self.dets_count[ cam_id ]
 
         elif( role == ROLE_TYPEINFO ):
-            return mode.type_info
+            return node.type_info
 
         elif (role == QtCore.Qt.ToolTipRole):
             return node.fullPath()
