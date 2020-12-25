@@ -751,9 +751,13 @@ class QGLCameraView( QtWidgets.QMainWindow ):
 
     def setModels( self, item_model, selection_model ):
         self._model = item_model
+        self._model.dataChanged.connect( self.onDataChange )
         self._select = selection_model
         # the camera groups
         self._qgl_pane._camera_group = item_model.groups[ Nodes.TYPE_GROUP_MOCAP ]
+
+    def onDataChange( self, change_idx ):
+        self._qgl_pane.acceptNewData( self._model.dets_dets, self._model.dets_strides, None )
 
     def onSelectionChanged( self, selected, deselected ):
         if( self._select is None ):
@@ -763,7 +767,7 @@ class QGLCameraView( QtWidgets.QMainWindow ):
         cam_list = []
         last_cam = -1
         for idx in self._select.selection().indexes():
-            if( idx.data( role=ROLE_TYPEINFO ) == Noeds.PI_CAMERA ):
+            if( idx.data( role=ROLE_TYPEINFO ) == Nodes.TYPE_CAMERA_MC_PI ):
                 cam = idx.data( role=ROLE_INTERNAL_ID )
                 cam_list.append( cam )
                 last_cam = cam
@@ -773,6 +777,7 @@ class QGLCameraView( QtWidgets.QMainWindow ):
         self._qgl_pane._camlistChanged()
 
     def acceptNewData( self, dets, strides, ids ):
+        print("Ack")
         self._qgl_pane.acceptNewData( dets, strides, ids )
 
     def _setupToolBar( self ):
