@@ -9,8 +9,8 @@ from functools import partial
 
 from PySide2 import QtCore, QtGui, QtWidgets, QtOpenGL
 from GUI.widgets import QKnob
-from GUI import getStdIcon
-
+from GUI import getStdIcon, ROLE_TYPEINFO
+from GUI.UINodes import uiNodeFactory
 
 class QDockingAttrs( QtWidgets.QDockWidget ):
 
@@ -25,6 +25,10 @@ class QDockingAttrs( QtWidgets.QDockWidget ):
         # currently selected type
         self._current = None
 
+        # selection Model and data Model
+        self._select = None
+        self._model  = None
+
         # cache of forms
         self._forms = {}
         self._forms_adv = {}
@@ -37,6 +41,8 @@ class QDockingAttrs( QtWidgets.QDockWidget ):
 
         # build
         self._buildUI()
+
+        self.setMinimumHeight( 250 )
 
     def _buildToolbar( self ):
         atrib_tools = self._mini_main.addToolBar( "AtribTools" )
@@ -81,17 +87,22 @@ class QDockingAttrs( QtWidgets.QDockWidget ):
 
         self.change_sel.setChecked( True )
 
-    def addSelectable( self, selectable ):
-        temp = self._makePanel( selectable.getAttrs() )
-        self._forms[ type( selectable ) ] = temp
+    def registerNodeType( self, node_type ):
+        ui_data = uiNodeFactory( node_type )
+        temp = self._makePanel( ui_data, False )
+        self._forms[ node_type ] = temp
         self.stack.addWidget( temp )
 
-        if( selectable.HAS_ADV ):
-            temp = self._makePanel( selectable.getAttrs( True ) )
-            self._forms_adv[ type( selectable ) ] = temp
+        if( ui_data.has_advanced ):
+            print("here")
+            temp = self._makePanel( ui_data, True )
+            self._forms_adv[ node_type ] = temp
             self.stack.addWidget( temp )
 
-    def _makePanel( self, traits ):
+        print( self._forms )
+        print( self._forms_adv )
+
+    def _makePanel( self, ui_node, do_advanced ):
         # make a scroll area containing the grid
         scroll = QtWidgets.QScrollArea( self )
         scroll.setWidgetResizable( True )
@@ -101,14 +112,21 @@ class QDockingAttrs( QtWidgets.QDockWidget ):
 
         # Assemble controls
         box_list = []
-        for depth, data in enumerate( traits ):
-            key, (default, lo, hi, name, desc, _) = data
+        depth = 0
+        for key in ui_node.trait_order:
+            t = ui_node.traits[ key ]
+
+            if( t.isAdvanced() and not do_advanced ):
+                #print( "skipping", key )
+                continue
+
             # Label
-            lab = QtWidgets.QLabel( name )
+            lab = QtWidgets.QLabel( t.name )
             lab.setToolTip( key )
             grid.addWidget( lab, depth, 0 )
+
             # Knob
-            knob = QKnob( self, hi, lo, default, desc )
+            knob = QKnob( self, t.max, t.min, t.default, t.desc )
             grid.addLayout( knob, depth, 1 )
             knob.valueChanged.connect( partial( self.valueChanged, key, "try" ) )
             knob.valueSet.connect( partial( self.valueSet, key, "set" ) )
@@ -118,6 +136,7 @@ class QDockingAttrs( QtWidgets.QDockWidget ):
                 area.setTabOrder( box_list[-1], knob.box )
             box_list.append( knob.box )
 
+            depth += 1
         # Loop around, if boxes available
         # if (len( box_list ) > 0):
         #     area.setTabOrder( box_list[-1], box_list[0] )
@@ -137,9 +156,24 @@ class QDockingAttrs( QtWidgets.QDockWidget ):
         app = self.parent()
         app.sendCNC( action, key, value )
 
-    def selectionChanged( self, sel_list=None ):
-        sel_list = sel_list or [ (None) ]  # Nothing selected
-        self._current = type( sel_list[0] )
+    def setModels( self, item_model, selection_model ):
+        self._model = item_model
+        #self._model.dataChanged.connect( self.onDataChange )
+        self._select = selection_model
+
+    def onDataChange( self, change_idx ):
+        pass
+
+    def onSelectionChanged( self, selected, deselected ):
+        if( self._select is None ):
+            return
+        # Currently assuming the last node is the lead node...
+        selection = self._select.selection().indexes()
+        if( len( selection ) > 0 ):
+            self._current = selection[-1].data( role=ROLE_TYPEINFO )
+        else:
+            self._current = None
+
         self.updateArea()
 
     def updateArea( self ):
@@ -166,4 +200,4 @@ class QDockingAttrs( QtWidgets.QDockWidget ):
 
         # Finish
         self.setWidget( self._mini_main )
-        self.selectionChanged()
+        self.onSelectionChanged( None, None )

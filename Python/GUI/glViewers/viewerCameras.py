@@ -221,8 +221,10 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
         self._camera_group = None # reference to all cameras
         self.cam_list = []
         self.num_cams = 0
-        self._lead_button = None # reference to the "lead toggle" button
         self.draw_lead = False
+        # reference to Controls in the status bar
+        self._lead_button  = None
+        self._label_button = None
 
         # Global Camera settings
         self.clip_nr = -100.0
@@ -588,9 +590,6 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
 
 
     # functional ---------------------------------------------------------------
-    def attachLeadButton( self, button ):
-        self._lead_button = button
-
     def acceptNewData( self, dets, strides, ids ):
         self.stride_list = np.asarray( strides, dtype=np.int32 )
 
@@ -609,11 +608,12 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
             my_ids = np.asarray( ids, dtype=np.int32 )
 
         # attempt to label
-        for i, (s_in, s_out) in enumerate( zip( self.stride_list[:-1], self.stride_list[1:] ) ):
-            labels, score = lid.labelWand( my_dets, s_in, s_out, False )
-            if( labels is not None ):
-                my_ids[s_in:s_out] = labels
-                #print( "labelled wand in camera {}".format(i) )
+        if( self._label_button.isChecked() ):
+            for i, (s_in, s_out) in enumerate( zip( self.stride_list[:-1], self.stride_list[1:] ) ):
+                labels, score = lid.labelWand( my_dets, s_in, s_out, False )
+                if( labels is not None ):
+                    my_ids[s_in:s_out] = labels
+                    #print( "labelled wand in camera {}".format(i) )
 
         packed_data2 = np.concatenate( (self._reticule_ids, my_ids) )
 
@@ -734,17 +734,19 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
 # ah. no it needs to be in a widget
 class QGLCameraView( QtWidgets.QMainWindow ):
 
-    def __init__( self, parent ):
+    def __init__( self, parent, live=True ):
         super( QGLCameraView, self ).__init__()
 
         # selection Model and data Model
         self._select = None
         self._model  = None
 
-
+        #live or offline
+        self.live = live
         self._qgl_pane = QGLCameraPane( self )
         self._setupToolBar()
-        self._qgl_pane.attachLeadButton( self.lead_mode )
+        self._qgl_pane._lead_button  = self.lead_mode
+        self._qgl_pane._label_button = self.label_mode
         self.setCentralWidget( self._qgl_pane )
 
         self._qgl_pane.update()
@@ -754,6 +756,7 @@ class QGLCameraView( QtWidgets.QMainWindow ):
         self._model.dataChanged.connect( self.onDataChange )
         self._select = selection_model
         # the camera groups
+        # todo: 'default' to all cameras in the group....
         self._qgl_pane._camera_group = item_model.groups[ Nodes.TYPE_GROUP_MOCAP ]
 
     def onDataChange( self, change_idx ):
@@ -776,16 +779,13 @@ class QGLCameraView( QtWidgets.QMainWindow ):
         self._qgl_pane.reorderCamList( lead=last_cam )
         self._qgl_pane._camlistChanged()
 
-    def acceptNewData( self, dets, strides, ids ):
-        print("Ack")
-        self._qgl_pane.acceptNewData( dets, strides, ids )
-
     def _setupToolBar( self ):
         toolbar = QtWidgets.QToolBar( "Camera view tools" )
         toolbar.setIconSize( QtCore.QSize( 16, 16 ) )
         toolbar.setMovable( False )
         self.addToolBar( toolbar )
 
+        # Display Options
         self.lead_mode = QtWidgets.QToolButton( self )
         self.lead_mode.setIcon( getStdIcon( QtWidgets.QStyle.SP_ArrowUp ) )
         self.lead_mode.setStatusTip( "Focus Lead" )
@@ -810,3 +810,29 @@ class QGLCameraView( QtWidgets.QMainWindow ):
         self.reset_all.clicked.connect( self._qgl_pane.resetAllCams )
         toolbar.addWidget( self.reset_all )
 
+        # Labelling Options
+        self.label_mode = QtWidgets.QToolButton( self )
+
+        # only draw if live
+        if( not self.live ):
+            return
+
+        toolbar.addSeparator()
+
+        # Toggling Icon
+        two_state = QtGui.QIcon()
+        temp_pm = getStdIcon( QtWidgets.QStyle.SP_DialogYesButton ).pixmap(128)
+        two_state.addPixmap( temp_pm, QtGui.QIcon.Normal, QtGui.QIcon.On )
+        temp_pm = getStdIcon( QtWidgets.QStyle.SP_DialogNoButton ).pixmap(128)
+        two_state.addPixmap( temp_pm,  QtGui.QIcon.Normal, QtGui.QIcon.Off )
+
+        self.label_mode.setIcon( two_state )
+        self.label_mode.setStatusTip( "Label Wand" )
+        self.label_mode.setToolTip( "Enable Visual Wand Labelling" )
+        self.label_mode.setCheckable( True )
+        toolbar.addWidget( self.label_mode )
+
+        # Todo: Write a 3-mkr detector, allow these to toggle something
+        self.selector = QtWidgets.QComboBox()
+        self.selector.addItems( ["5-mkr Wand", "3-mkr Wand", "1 Point"] )
+        toolbar.addWidget( self.selector )

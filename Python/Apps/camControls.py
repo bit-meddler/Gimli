@@ -320,12 +320,11 @@ class QMain( QtWidgets.QMainWindow ):
 
         # setup the attribute editor = TODO: This better
         self.splash.showMessage( "Editor: Attributes" )
-        cam = Camera( "anon", -1 )
-        mesh = Mesh()
-        atribs = QDockingAttrs( self )
-        atribs.addSelectable( cam )
-        atribs.addSelectable( mesh )
-        self.addDockWidget( QtCore.Qt.LeftDockWidgetArea, atribs )
+        self.atribs = QDockingAttrs( self )
+        self.atribs.registerNodeType( Nodes.TYPE_CAMERA_MC_PI )
+        self.atribs.setModels( self.scene_model, self.selection_model )
+        self.selection_model.selectionChanged.connect( self.atribs.onSelectionChanged )
+        self.addDockWidget( QtCore.Qt.LeftDockWidgetArea, self.atribs )
 
         # Region tool
         self.splash.showMessage( "Editor: Masking" )

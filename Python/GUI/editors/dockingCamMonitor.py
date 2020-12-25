@@ -4,10 +4,11 @@ docking Camera Activity Monitor
 """
 
 import logging
+from functools import partial
 from PySide2 import QtCore, QtGui, QtWidgets, QtOpenGL
 
 from GUI import ROLE_INTERNAL_ID, ROLE_NUMROIDS, Nodes
-
+from GUI.widgets import QKnob
 
 class QDockingCamActivityMon( QtWidgets.QDockWidget ):
 
@@ -134,6 +135,10 @@ class QDockingCamActivityMon( QtWidgets.QDockWidget ):
         hz.setEnabled( False )
         self.scroll_area.setHorizontalScrollBarPolicy( QtCore.Qt.ScrollBarAlwaysOff )
 
+        self._ctx = QtWidgets.QWidget( self )
+        layout = QtWidgets.QVBoxLayout( self )
+        self._ctx.setLayout( layout )
+
         self._delegate = QDockingCamActivityMon.CamDelegate( self.palette() )
 
         self.view = QtWidgets.QListView()
@@ -143,7 +148,15 @@ class QDockingCamActivityMon( QtWidgets.QDockWidget ):
         self.view.setMinimumWidth( 150 )
         self.view.setItemDelegate( self._delegate )
 
-        self.scroll_area.setWidget( self.view )
+        self.max_knob = QKnob( self, 1024, 1, 150, "High Det Warning" )
+        self.max_knob.valueChanged.connect( self.setRoidLimit )
+        self.max_knob.valueSet.connect( self.setRoidLimit ) # save in global settings ???
+
+        layout.addWidget( self.view )
+        layout.addWidget( QtWidgets.QLabel("High Detection count Warning", self ) )
+        layout.addLayout( self.max_knob )
+
+        self.scroll_area.setWidget( self._ctx )
         self.setWidget( self.scroll_area )
 
     def setModels( self, item_model, selection_model ):
@@ -156,7 +169,7 @@ class QDockingCamActivityMon( QtWidgets.QDockWidget ):
         self.view.setRootIndex( cams_idx )
 
     def setRoidLimit( self, num_roids ):
-        self._delegate.roid_overload_limit = num_roids
+        self._delegate.roid_overload_limit = int( num_roids )
 
     def update( self ):
         self.view.update()

@@ -15,7 +15,7 @@ import threading
 import zmq
 
 
-class CameraTraits( object ):
+class CameraTraits( object ): # D E P R I C A T E D
     """ ToDo: NOPE! This is UI, not really anything to do with comunications
         Object describing controllable traits of a camera. It holds GUI presentable data
         like a human readable name, description etc, and implementation specific data
