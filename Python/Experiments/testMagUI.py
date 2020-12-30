@@ -2,11 +2,7 @@ from PySide2 import QtGui, QtWidgets, QtCore
 import sys
 
 class TimeSlider( QtWidgets.QAbstractSlider ):
-    TICK_COL  = QtCore.Qt.lightGray
-    HEAD_COL  = QtGui.QColor( 100, 100, 100 )
-    HEAD_BG   = QtGui.QColor( 43, 43, 43 )
-    HEAD_HIGH = QtCore.Qt.white
-    BASE_COL  = QtGui.QColor( 60, 63, 65 )
+
     FONT_SIZE = 12
     
     GRATICS = (
@@ -29,8 +25,6 @@ class TimeSlider( QtWidgets.QAbstractSlider ):
         super( TimeSlider, self ).__init__()
         self.setOrientation( QtCore.Qt.Horizontal )
 
-        self.setBackgroundRole( QtGui.QPalette.Base )
-        
         self._font = QtGui.QFont( "Decorative", 8 )
         self._font.setPixelSize( self.FONT_SIZE )
 
@@ -62,25 +56,27 @@ class TimeSlider( QtWidgets.QAbstractSlider ):
         val    = self.value()
         ph_pos = int( val * self._px_per_frame )
         mx_pos = int( mx * self._px_per_frame )
+
+        palette = self.palette()
         
         painter = QtGui.QPainter()
 
         painter.begin( self )
         # clear
         painter.setFont( self._font )
-        painter.setPen( self.BASE_COL )
-        painter.setBrush( self.BASE_COL )
+        painter.setPen( palette.color( palette.Active, palette.Window ) )
+        painter.setBrush( palette.color( palette.Active, palette.Window ) )
         painter.drawRect( self.rect() )
 
         # Playhead
-        painter.setPen( self.HEAD_COL )
-        painter.setBrush( self.HEAD_BG )
+        painter.setPen( palette.color( palette.Active, palette.Highlight ) )
+        painter.setBrush( palette.color( palette.Active, palette.Highlight ) )
         self._playhead.moveLeft( ph_pos )
         painter.drawRect( self._playhead )
 
         # graticules
         mjr, mnr = self._grat_cadence
-        painter.setPen( self.TICK_COL )
+        painter.setPen( palette.color( palette.Active, palette.Mid ) ) # Graticule Ticks & Text
         text_area = QtCore.QRect(0, 0, mjr*int( self._px_per_frame ), self._grat_mjr_height )
 
         # draw first tick exactly on minimum
@@ -127,28 +123,29 @@ class TimeSlider( QtWidgets.QAbstractSlider ):
         painter.drawText( text_area, tx_flags, str( mx ) )
 
         # Finally draw the Playhead Decoration
-        
         val_txt = str( val )
         font_metrics = QtGui.QFontMetrics( self._font )
         val_w = font_metrics.width( val_txt )
-        text_area.moveBottomLeft( QtCore.QPoint( ph_pos + 1, h - 1 ) )
+        text_area.moveBottomLeft( QtCore.QPoint( ph_pos, h - 1 ) )
         text_area.setWidth( val_w + 1 )
         
+        painter.setPen( palette.color( palette.Active, palette.Highlight ) )
+        painter.setBrush( palette.color( palette.Active, palette.Highlight ) )
+
         if( ph_pos + val_w > mx_pos ):
             # write on LHS
             tx_flags = QtCore.Qt.AlignBottom | QtCore.Qt.AlignRight
             text_area.moveRight( ph_pos - 1 )
+            painter.setPen( palette.color( palette.Active, palette.Text ) )
         else:
             tx_flags = QtCore.Qt.AlignBottom | QtCore.Qt.AlignLeft
+            painter.drawRect( text_area )
+            painter.setPen( palette.color( palette.Active, palette.HighlightedText ) )
             
-        painter.setPen( self.BASE_COL )
-        painter.setBrush( self.BASE_COL )
-        painter.drawRect( text_area )
-        
-        painter.setPen( self.HEAD_HIGH )
-        painter.drawLine( ph_pos, 0, ph_pos, h )
         painter.drawText( text_area, tx_flags, val_txt )
 
+        painter.setPen( palette.color( palette.Active, palette.Link ) )
+        painter.drawLine( ph_pos, 0, ph_pos, h )
         # Done
         painter.end()
 
@@ -210,34 +207,80 @@ class TimeSlider( QtWidgets.QAbstractSlider ):
     def _valueFromX( self, x_pos ):
         os = int( x_pos / self._px_per_frame )
         return os + self.minimum()
-            
+
+
+class MagSlider( QtWidgets.QAbstractSlider ):
+
+    def __init__(self, parent ):
+        super( MagSlider, self ).__init__( parent )
+        self.setOrientation( QtCore.Qt.Horizontal )
+
+        self._font = QtGui.QFont( "Decorative", 8 )
+        self._font.setPixelSize( TimeSlider.FONT_SIZE )
+        
+        font_metrics = QtGui.QFontMetrics( self._font )
+        self._font_h = font_metrics.height()
+
+        self._pref_height = self._font_h * 1.5
+        self.setMinimumWidth( 70 )
+        self.setMinimumHeight( self._pref_height )
+        
+    def paintEvent( self, painter_event ):
+        palette = self.palette()        
+        painter = QtGui.QPainter()
+        painter.begin( self )
+        
+        painter.end()
+        
+    def resizeEvent( self, sz_event ):
+        self.updateMetrics()
+        super( MagSlider, self ).resizeEvent( sz_event )
+        
+    def updateMetrics( self ):
+        # calculate scale of visible range and playhead size
+        w, h = self.width(), self.height()
+        self.update()
+        
+    def mousePressEvent( self, event ):       
+        super( MagSlider, self ).mousePressEvent( event )
+ 
+    def mouseReleaseEvent( self, event ):
+        super( MagSlider, self ).mouseReleaseEvent( event )
+
+    def mouseMoveEvent( self, event ):
+        super( MagSlider, self ).mouseMoveEvent( event )
+
+        
+class MagTimeSlider( QtWidgets.QWidget ):
+    def __init__( self, parent ):
+        super( MagTimeSlider, self ).__init__( parent )
+
+        vbox = QtWidgets.QVBoxLayout( self )
+        vbox.setContentsMargins( 0, 0, 0, 0)
+        vbox.setSpacing( 0 )
+
+        self.sld = TimeSlider()
+        self.sld.setMaximum( 150 )
+        self.sld.setMinimum( 12 )
+        
+        self.sld.valueChanged.connect( lambda x: print(x) )
+        vbox.addWidget( self.sld )
+
+        self.mag = MagSlider( self )
+        vbox.addWidget( self.mag )
+
+        vbox.addStretch()
+
+
 class Window( QtWidgets.QMainWindow ):
     
     def __init__(self):
         super( Window, self ).__init__()
         self.setWindowTitle("Testing ScrollBars")
 
-        ctx = QtWidgets.QWidget()
-        vbox = QtWidgets.QVBoxLayout( ctx )
-        vbox.setContentsMargins( 0, 0, 0, 0)
-        vbox.setSpacing( 0 )
-
-        self.sld = TimeSlider()
-        self.sld.setMaximum( 150 )
-        self.sld.valueChanged.connect( lambda x: print(x) )
-        vbox.addWidget( self.sld )
-
-        self.mag = QtWidgets.QScrollBar()
-        self.mag.setOrientation( QtCore.Qt.Horizontal )
-        self.mag.valueChanged.connect( lambda x: print(x) )
-
-        self.mag.setPageStep( 200 )
+        mag_slider = MagTimeSlider( self )
         
-        vbox.addWidget( self.mag )
-
-        vbox.addStretch()
-        
-        self.setCentralWidget( ctx )
+        self.setCentralWidget( mag_slider )
         self.resize( 700, 120 )
 
 if( __name__ == "__main__" ):
