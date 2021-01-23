@@ -16,6 +16,8 @@ import time
 import numpy as np
 
 from Comms import piCam
+from utils import SelectableQueue
+
 
 SOCKET_TIMEOUT = 10
 RECV_BUFF_SZ   = 10240 # bigger than a Jumbo Frame
@@ -46,7 +48,9 @@ class SimpleComms( threading.Thread ):
         self.manager = manager
 
         # Queues to communicate in and out of the thread
-        self.q_cmds = SimpleQueue() # commands into the communicator
+        # Magic Queue that can be Polled by Select
+        self.q_cmds = SelectableQueue() # commands into the communicator
+        # Normal Queues
         self.q_dets = SimpleQueue() # Centroid fragments, Light Hi priority, need to be packetized
         self.q_imgs = SimpleQueue() # Image Fragments, Heavy low priority, need to be assembled
         self.q_misc = SimpleQueue() # Other Camera Reports
@@ -65,7 +69,7 @@ class SimpleComms( threading.Thread ):
             pass
         self.command_socket.bind( (self.host_ip, piCam.UDP_PORT_TX) )
         self.command_socket.settimeout( SOCKET_TIMEOUT )
-        self._inputs = [ self.command_socket ]
+        self._inputs = [ self.command_socket, self.q_cmds ]
 
         # Command Selector
         self._HANDLER = {
@@ -79,30 +83,34 @@ class SimpleComms( threading.Thread ):
     def run( self ):
         # be nice to do this with ASIO...
         while( self.running.isSet() ):
-            # look for commands
-            if( not self.q_cmds.empty()):
-                try:
-                    cmd_string = self.q_cmds.get( False )
-                    target, commands = cmd_string.split( ":", 1 )
-                    imperative, data = commands.split( " ", 1 )
-                    self._HANDLER[ imperative ]( target, data )
-
-                except Empty as e:
-                    # no commands
-                    pass
-                except KeyError:
-                    # unrecognised command, ignore
-                    pass
-
             # Read Data from socket
             readable, _, _ = select.select( self._inputs, [], [], 0 ) # 0 timeout = poll
             for sock in readable:
                 # TODO: Can this be better?
-                data, (src_ip, src_port) = sock.recvfrom( RECV_BUFF_SZ )
-                self.handlePacket( src_ip, data )
 
-        # running flag has been cleared
+                if( sock == self.command_socket ):
+                    data, (src_ip, src_port) = self.command_socket.recvfrom( RECV_BUFF_SZ )
+                    self.handlePacket( src_ip, data )
+
+                if( sock == self.q_cmds ):
+                    try:
+                        cmd_string = self.q_cmds.get( False )
+                        target, commands = cmd_string.split( ":", 1 )
+                        imperative, data = commands.split( " ", 1 )
+                        self._HANDLER[ imperative ]( target, data )
+
+                    except Empty as e:
+                        # no commands in Queue
+                        pass
+
+                    except KeyError:
+                        # unrecognised command, ignore
+                        pass
+
+
+        # running flag has been cleared, close networking
         self.command_socket.close()
+        self.q_cmds.cleanClose()
 
     def handlePacket( self, src_ip, data ):
         dtype, time_stamp, num_dts, dgm_no, dgm_cnt, msg = piCam.decodePacket( data )
