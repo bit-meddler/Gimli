@@ -35,6 +35,7 @@ Post Wish List:
 * Posable skeleton to boot tracking
 * Co-articulated joints
 * limb segment inertia factored into tracking / prediction / solving
+* "Export Alias" attached to subjects, so multipule (differently named) subject calibrations always produce well named files
 * and many more...
 
 ## Installing
