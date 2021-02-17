@@ -1,5 +1,5 @@
 """
-    A 3D scene viewer,
+    A 3D scene viewer,  This is just "Hello World".  Need a real one.
 """
 import logging
 import numpy as np

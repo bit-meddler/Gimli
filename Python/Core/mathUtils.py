@@ -1,10 +1,18 @@
 """ mathUtils
 
-place for general maths helpers that stradle logical groupings, or don't fit anywhere else.
+place for general maths helpers that straddle logical groupings, or don't fit anywhere else.
 
 """
 
 def argsortLite( array ):
+    """
+    Simple Argsort implementation, OK for up to 10 elements
+    Args:
+        array: (listlike) List to get sorting data from
+
+    Returns:
+        idxs: (list) List of idx of elements in array, in sorted order.
+    """
     num_elem = len( array )
     idxs = list( range( num_elem ) )
     for i in range( 1, num_elem ):

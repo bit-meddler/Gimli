@@ -21,6 +21,10 @@ class QKnob( QtWidgets.QHBoxLayout ):
     valueSet     = QtCore.Signal( int ) # Mouse release, or box entry is "SET"
 
     class KSlider( QtWidgets.QSlider ):
+        """
+        Special 'Knob Slider' that allows wheel scrolling when mouseover.
+        Also [Ctrl]+Double click to restore default.
+        """
 
         def __init__( self, parent=None ):
             super( QKnob.KSlider, self).__init__( parent )
@@ -55,6 +59,9 @@ class QKnob( QtWidgets.QHBoxLayout ):
 
 
     class KEdit( QtWidgets.QLineEdit ):
+        """
+        Special 'Knob Editor' that plays nice with mouse wheel events.
+        """
         # todo: [Shift] [Alt] [Ctrl] Modifiers and MMB Click drag
         # todo: [Ctrl] LMB reset to default
         # todo: +=/-= semantics
@@ -93,6 +100,16 @@ class QKnob( QtWidgets.QHBoxLayout ):
 
 
     def __init__( self, parent, hi, lo, default, desc ):
+        """
+        An integer 'Knob'.  this is both a text box and a slider.
+
+        Args:
+            parent: (QtWidget) Widget this is attached to
+            hi: (int) max value
+            lo: (int) min value
+            default: (int) default value.
+            desc: (str) Tooltip description
+        """
         super( QKnob, self ).__init__( parent )
         self.box = self.KEdit( "", parent )
         self.slider = self.KSlider( parent )
@@ -116,7 +133,7 @@ class QKnob( QtWidgets.QHBoxLayout ):
 
     def _sliderMove( self, value ):
         if( self.dialing ):
-            return # Hopw did we get here?
+            return # How did we get here?
 
         self.dialing = True
         self.box.setText( str( value ) )
@@ -125,7 +142,7 @@ class QKnob( QtWidgets.QHBoxLayout ):
 
     def _sliderSet( self ):
         if( self.dialing ):
-            return  # Hopw did we get here?
+            return  # How did we get here?
 
         self.dialing = True
         val = self.slider.value()

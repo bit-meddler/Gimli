@@ -1,3 +1,4 @@
+""" Generate the code for mask region's "NodeTrates", and their register addresses. """
 num = 16
 axis = ["x", "y", "m", "n"]
 human = ["Left", "Top", "Right", "Bottom"]

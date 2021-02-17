@@ -1,5 +1,8 @@
 """
-docking mask region controler
+Docking mask region controller.  Currently just visual placeholder.
+ToDo: attach to models
+ToDo: Emit CnC to selected camera
+ToDo: draw and edit Regions in the "viewerCamera"!
 
 """
 

@@ -102,7 +102,7 @@ class QBrownPalette( QPaletteOveride ):
 
 
 
-# - Scene Model ----------------------------------------------------------------
+# - Scene Model --------------------------------------------------------------------------------------------------------
 
 ROLE_INTERNAL_ID = QtCore.Qt.UserRole + 0
 ROLE_NUMROIDS    = QtCore.Qt.UserRole + 1

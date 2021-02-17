@@ -1,5 +1,6 @@
 """
-docking Outliner
+Docking Outliner.
+This will need more functionality possibly?  Search for nodes?  Filter nodes?
 
 """
 

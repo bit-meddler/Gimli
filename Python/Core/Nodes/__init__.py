@@ -17,6 +17,7 @@ TYPE_GROUP_VIEW = "GP_VIEW"
 TYPE_GROUP_TARGETS = "GP_TARGETS"
 
 
+# Default names are given when new Nodes are created
 DEFAULT_NAMES = {
     TYPE_NODE : "Node",
     TYPE_ROOT : "Root",
@@ -32,13 +33,19 @@ DEFAULT_NAMES = {
     TYPE_GROUP_VIEW : "Views",
     TYPE_GROUP_TARGETS : "Targets",
 }
-# ------------------------- The main Node base class ----------------------------- #
+# ------------------------- The main Node base class ----------------------------------------------------------------- #
 class Node( object ):
     """ Abstract base class for Nodes. """
 
     TYPE_INFO = TYPE_NODE
 
     def __init__( self, name, parent=None ):
+        """
+        Instantiate a Node.
+        Args:
+            name: (str) The Nodes name
+            parent: (Nodelike) The Node's parent.
+        """
         self.name = name
         self._children = []
         self._child_count = 0
@@ -52,11 +59,25 @@ class Node( object ):
         self.type_info = self.TYPE_INFO
             
     def addChild( self, child ):
+        """
+        Add a child node under this node.
+        Args:
+            child: (Nodelike) The child.
+        """
         self._children.append( child )
         self._child_count += 1
 
     def insertChild( self, position, child ):
-        if( (position < 0) or (position > len( self._children )) ):
+        """
+        Insert the given Node to a specific index in the child list.
+        Args:
+            position: (int) Target position for the Node.
+            child: (noedlike) the Node.
+
+        Returns:
+            success: (bool) If it was possible to insert the node.
+        """
+        if( (position < 0) or (position > self._child_count) ):
             return False # Bad target index
 
         self._children.insert( position, child )
@@ -65,7 +86,16 @@ class Node( object ):
         return True
     
     def removeChild( self, position ):
-        """ Remove child at position, and return it (if possible to remove) """
+        """
+        Remove child at position, and return it (if possible to remove)
+        Args:
+            position: (int) index of Node to remove
+
+        Returns:
+            result: (tuple)
+                success: (bool) Has it been possible to remove the node.
+                node: (nodelike) The removed node, if successful.
+        """
         if( (position < 0) or (position > len( self._children )) ):
             return (False, None) # Bad target index
 
@@ -75,6 +105,14 @@ class Node( object ):
         return (True, child)
 
     def safeChildName( self, name ):
+        """
+        Test and generate a name that doesn't collide with existing children.
+        Args:
+            name: (str) Candidate node name.
+
+        Returns:
+            new_name: (bool) The safe name for a child node.
+        """
         child_names = [ c.name for c in self._children ]
         new_name = name
         count = 1
@@ -84,6 +122,11 @@ class Node( object ):
         return new_name
     
     def delChild( self, child ):
+        """
+        Remove the supplied node from the list of children.
+        Args:
+            child: (nodelike) The node to remove
+        """
         if( child in self._children ):
             self._children.remove( child )
             self._child_count -= 1
@@ -98,19 +141,36 @@ class Node( object ):
         return (self._child_count > 0)
 
     def row( self ):
-        # Index relative to parent
+        """
+        For Qt Tree widgets, the "row" is the depth of this node in it's parent's child list.
+        Returns:
+            index: (int) This Node's index.
+        """
         if( self.parent is not None ):
             return self.parent._children.index( self )
         else:
             return 0
 
     def fullPath( self ):
+        """
+        Generate a textual 'path' to this node.
+        Returns:
+            path: (str) the path.
+        """
         if( self.parent is not None ):
             return self.parent.fullPath() + "/" + self.name
         else:
             return "/" + self.name
         
     def _log( self, tab=-1 ):
+        """ DEBUG
+        Recurse Children and build a 'tree' with indents showing depth of children.
+        Args:
+            tab: (int) indent depth.
+
+        Returns:
+            output: (str) The complete tree
+        """
         output = ""
         tab += 1
         output += "{: <{indent}}{} <{}>\n".format( "", self.displayName(), self.type_info, indent=tab*2 )
@@ -120,28 +180,52 @@ class Node( object ):
         return output
 
     def displayName( self ):
-        """ Not a 'Getter' - allows group nodes to display a count of children etc """
+        """
+        Not a 'Getter' - allows subclassing nodes to display extra information, such as a count of children.
+        Returns:
+            displayname: (str) What to display for this node's name.
+        """
         return self.name
 
     def toJSON( self ):
-        # serialize the data dict to JSON
+        """
+        Implementing Nodes will have a private method to handle their JSON representation.
+        Returns:
+            json: (str) JSON of the node's data.
+        """
         return ""
 
     def fromJSON( self, json_data ):
+        """
+        Implementing Nodes will have a private method to handle their JSON representation.
+        Args:
+            json_data: (str) JSON of a node's data
+        """
         pass
 
 
-# --------------- Some Boiler plate nodes and groups ----------------------------- #
+# --------------- Some Boiler plate nodes and groups ----------------------------------------------------------------- #
 class RootNode( Node ):
+    """
+    The Root node, there should only ever be one of these, and it is parent of the whole tree structure
+    """
     TYPE_INFO = TYPE_ROOT
 
     def fullPath( self ):
         return ""
 
 class GroupNode( Node ):
+    """
+    A Group Node is a display controlling node, not actually evaluated or doing anything.
+    """
     TYPE_INFO = TYPE_GROUP
 
     def displayName( self ):
+        """
+        Overloading generic displayName, this implementation shows how many children a group has.
+        Returns:
+            displayname: (Str) custom display name.
+        """
         return "{} [{}]".format( self.name, self._child_count )
 
 class GroupSystem( GroupNode ):
@@ -157,7 +241,7 @@ class GroupTargets( GroupNode ):
     TYPE_INFO = TYPE_GROUP_TARGETS
 
 
-
+# As we add "Functional" Nodes, we'll need to import them and load the LUT up with the implementations.
 from . import camera, mcCamera
 
 NODE_LUT = {
@@ -172,10 +256,21 @@ NODE_LUT = {
 }
 
 def factory( node_type, name=None, parent=None ):
+    """
+    Given a node_type (that is registered here, and implemented) generate a default node.
+    Args:
+        node_type: (str) new Node Type.
+        name: (str) The new Node's name.
+        parent: (nodelike) The new Node's parent.
+
+    Returns:
+        node: (nodelike) The new Node.
+    """
     name = name or DEFAULT_NAMES[ node_type ]
     return NODE_LUT[ node_type ]( name, parent )
 
-    
+
+# Also Register the type of new nodes here so other components can use them
 __all__ = [
 
     "TYPE_NODE",

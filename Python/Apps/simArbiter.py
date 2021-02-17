@@ -4,7 +4,7 @@
     it will play back the exemplor data files to simulate a working MoCap system,
     and it will simulate cameras responding correctly to C&C messages.
 
-    For now t will emulate a "esential" Mocap system of 10 cameras and 1 sync unit.
+    For now it will emulate a basic Mocap system of 10 cameras and 1 sync unit.
 """
 
 # Workaround not being in PATH

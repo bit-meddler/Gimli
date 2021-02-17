@@ -1,5 +1,6 @@
 """
-docking Camera Activity Monitor
+Docking Camera Activity Monitor.  Just a silly heatmap to show which cameras are getting centroids, or if any are
+getting unusually high numbers of centroids.
 
 """
 
@@ -13,6 +14,9 @@ from GUI.widgets import QKnob
 class QDockingCamActivityMon( QtWidgets.QDockWidget ):
 
     class CamDelegate( QtWidgets.QStyledItemDelegate ):
+        """
+        Draw a nice looking button with a 'chip' in the middle to act as the 'heatmap'.
+        """
 
         BUT_SIZE  = QtCore.QSize( 48, 48 )
         HIGH_RECT = QtCore.QRect(  1, 1, 46, 46 )
@@ -160,6 +164,7 @@ class QDockingCamActivityMon( QtWidgets.QDockWidget ):
         self.setWidget( self.scroll_area )
 
     def setModels( self, item_model, selection_model ):
+        """ Editors attach to the main item and selection model """
         old = self.view.selectionModel()
         self.view.setModel( item_model )
         self.view.setSelectionModel( selection_model )
@@ -169,7 +174,9 @@ class QDockingCamActivityMon( QtWidgets.QDockWidget ):
         self.view.setRootIndex( cams_idx )
 
     def setRoidLimit( self, num_roids ):
+        """ slot called when 'max_knob' changes """
         self._delegate.roid_overload_limit = int( num_roids )
 
     def update( self ):
+        """ Might be depricated?? """
         self.view.update()

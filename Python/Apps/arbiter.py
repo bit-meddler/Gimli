@@ -3,7 +3,7 @@
     The Arbiter is the "core" loop. it will manage multiple ZMQ services:
 
     CameraCnC  : DB Multi Client access to camera settings
-    SysState   : DB Camera List changes, Camea settings
+    SysState   : DB Camera List changes, Camera settings <- Lots to do here
 
     SysAnnounce: PS Flag the state has changed, Subs Req what they're interested in
     Centroids  : PS Stream of Centroids from the MoCap System
@@ -46,6 +46,18 @@ from Comms.piComunicate import AssembleDetFrame, SimpleComms
 
 
 class Arbiter( object ):
+    """
+    The Arbiter is well named, as it abstracts away implementation level details of the MoCap cameras under it's
+    administration from various 'Agents' that attach to it to receive pertinent data.
+
+    The Arbiter will ultimatly manage the system topology, knowing which family or model of mocap cameras are attached.
+    Managing one or more sync units to control them, and finally formatting centroid data produced by the cameras into
+    "Data Frames" - representing one frame of camera detections.  The raw centroid data emited by the cameras is
+    transformed by the Arbiter into "NDC" representation.
+
+    TODO: This needs a lot of work as it's core to the system, but presently parked waiting on the UI
+
+    """
 
     def __init__( self, local_ip=None ):
         # System State

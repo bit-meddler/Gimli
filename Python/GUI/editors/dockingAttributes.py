@@ -1,5 +1,11 @@
 """
-The Docking attribute editor.  This will need to hook into the scenegraph and selection model
+The Docking attribute editor.
+
+At UI creation time, it is expected that any nodes we will have in the scene will be registered.  When registered their
+Attribuite edit pane will be created.  Selection and Scene Model are shared with the application and currently the
+"Lead" Node in the selection (usually last) is the node whose editor will be displayed.
+
+ToDo: so much...
 
 """
 
@@ -88,21 +94,34 @@ class QDockingAttrs( QtWidgets.QDockWidget ):
         self.change_sel.setChecked( True )
 
     def registerNodeType( self, node_type ):
+        """
+        Currently we just build node specific UIs here, we could also switch in other functionality perhaps?
+        Args:
+            node_type: (str) Type Info for the Node we are registering
+        """
         ui_data = uiNodeFactory( node_type )
         temp = self._makePanel( ui_data, False )
         self._forms[ node_type ] = temp
         self.stack.addWidget( temp )
 
         if( ui_data.has_advanced ):
-            print("here")
             temp = self._makePanel( ui_data, True )
             self._forms_adv[ node_type ] = temp
             self.stack.addWidget( temp )
 
-        print( self._forms )
-        print( self._forms_adv )
+        print( self._forms.keys() )
+        print( self._forms_adv.keys() )
 
     def _makePanel( self, ui_node, do_advanced ):
+        """
+        Build the Attribute editor for the supplied node.
+        Args:
+            ui_node: (nodelike) The node to build UI for
+            do_advanced: (bool) should we do the advanced options?
+
+        Returns:
+            scroll: (QScrollArea)
+        """
         # make a scroll area containing the grid
         scroll = QtWidgets.QScrollArea( self )
         scroll.setWidgetResizable( True )
@@ -146,25 +165,44 @@ class QDockingAttrs( QtWidgets.QDockWidget ):
         return scroll
 
     def valueChanged( self, key, action, value ):
+        """
+        Slot called when one of the field editors make a change.
+        Args:
+            key: (str) The attribute key that's been changed.
+            action: (str) SET or TRY, only SET actions go onto the Undo stack.
+            value: (any) Value changed.
+
+        Returns:
+
+        """
         # This info needs to work it's way back up to the app and MVC for the data
         print( key, action, value )
         app = self.parent()
         app.sendCNC( action, key, value )
 
     def valueSet( self, key, action, value ):
+        """ as above """
         print( key, action, value )
         app = self.parent()
         app.sendCNC( action, key, value )
 
     def setModels( self, item_model, selection_model ):
+        """ Attach the data and selection models """
         self._model = item_model
         #self._model.dataChanged.connect( self.onDataChange )
         self._select = selection_model
 
     def onDataChange( self, change_idx ):
+        """ Slot called by selection model when data changes."""
         pass
 
-    def onSelectionChanged( self, selected, deselected ):
+    def onSelectionChanged( self, _selected, _deselected ):
+        """
+        Slot called when selection changes.  Keeps the displayed editor in agreement with the lean selection item.
+        Args:
+            _selected: unused
+            _deselected: unused
+        """
         if( self._select is None ):
             return
         # Currently assuming the last node is the lead node...
@@ -177,6 +215,9 @@ class QDockingAttrs( QtWidgets.QDockWidget ):
         self.updateArea()
 
     def updateArea( self ):
+        """
+        Switches the display to the selected node.
+        """
         if( self.show_adv.isChecked() ):
             if( self._current in self._forms_adv ):
                 self.stack.setCurrentWidget( self._forms_adv[ self._current ] )
@@ -190,6 +231,7 @@ class QDockingAttrs( QtWidgets.QDockWidget ):
             self.stack.setCurrentWidget( self._forms[ type( None ) ] )
 
     def _buildUI( self ):
+        """ assemble UI, trigger a dummy change to show the "None" editor. """
         self._mini_main = QtWidgets.QMainWindow()
         self._mini_main.setCentralWidget( self.stack )
 

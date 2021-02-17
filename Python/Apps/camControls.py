@@ -1,12 +1,11 @@
-""" camControls.py - UI for configuring cameras and monitoring Centroids.
+""" camControls.py - UI for configuring cameras and monitoring Centroids. Wand detection can be enabled
 
 """
 from functools import partial
 import logging
 import numpy as np
-from PySide2 import QtCore, QtGui, QtWidgets, QtOpenGL
+from PySide2 import QtCore, QtGui, QtWidgets
 from queue import SimpleQueue
-from OpenGL import GL, GLU, GLUT 
 import zmq
 
 import sys, os
@@ -39,10 +38,22 @@ from GUI.glViewers.viewerCameras import QGLCameraView
 class QMain( QtWidgets.QMainWindow ):
 
     class ArbiterListen( QtCore.QThread ):
+        """
+        ArbiterListen.  A Threaded listener making used of a ZMQ Poller to receive a "Data Frame" of centroids and emit
+        a signal when this happens.  Received "Data Frames" are placed in a Queue which is 'owned' byt the main app.  It
+        is the apps responsibility to either deal with frames peacemeal, or flush the Queue and only process one packet
+        from any that have collected there.
+
+        """
 
         found = QtCore.Signal()
 
         def __init__( self, out_q ):
+            """
+            Args:
+                out_q: (SimpleQueue) This must be a *Threadsafe* Queue which Data Packets are placed on when they are
+                                     received
+            """
             # Thread setup
             super( QMain.ArbiterListen, self ).__init__()
 
@@ -68,9 +79,20 @@ class QMain( QtWidgets.QMainWindow ):
             self.running = True
 
         def run( self ):
+            """
+
+            Emits:
+                found() Qt Signal that the Listener has received a frame and placed it on the Queue
+            Enqueues:
+                A Data Frame (tuple)
+                    fps (float) FPS we are receiving and emiting at
+                    time (int) timestamp of data frame
+                    nd_strides (ndarray) (int) Nx1 Array of stride data for the frame
+                    nd_data (ndarray) (float) Nx3 Array of Centroid data, [x, y, r]
+            """
             # Core Thread
             while( self.running ):
-                # look for packets
+                # wait for packets
                 coms = dict( self.poller.poll( 0 ) )
                 if( coms.get( self.dets_recv ) == zmq.POLLIN ):
                     topic, _, time, strides, data = self.dets_recv.recv_multipart()
@@ -88,13 +110,29 @@ class QMain( QtWidgets.QMainWindow ):
             self.dets_recv.close()
             self._zctx.term()
 
+        def quit( self ):
+            """
+            Cleanly close the Network resources used by the thread, before terminating.
+
+            """
+            self.running = False
+            #self.dets_recv.close()
+            #self._zctx.term()
+            super( QMain.ArbiterListen, self ).quit()
+
+
     def __init__( self, parent ):
+        """
+        The Main Camera Control Application.
+        Args:
+            parent: the Parent QApplication - but as this *is* the application, do we need to do this?
+        """
         super( QMain, self ).__init__()
-        self._app = parent
+        self._app = parent # This could be QtWidgets.QApplication()?
 
         # app config
-        self._app.setApplicationName( "Testing Midget UI" )
-        self._app.setOrganizationName( "Midget Software" )
+        self._app.setApplicationName( "Gimli Camera Controls" )
+        self._app.setOrganizationName( "Gimli" )
         self._app.setOrganizationDomain( "" )
 
         screen, placement = self._getPrefDims()
@@ -114,7 +152,7 @@ class QMain( QtWidgets.QMainWindow ):
         self._actions = {}
         self.frame_observers = []
 
-        # qt MVC System
+        # Qt MVC System
         self.scene_model = SceneModel()
         # Register Nodes we expect in this scene
         self.scene_model.registerNode( Nodes.TYPE_CAMERA_MC_PI )
@@ -129,7 +167,7 @@ class QMain( QtWidgets.QMainWindow ):
         self.dets_q = SimpleQueue()
 
         # Arbiter Comms channels
-        # TODO: Test if Arbiter is running, spawn one if needed
+        # TODO: Test if Arbiter is running, spawn one if needed. mDNS?
         self.splash.showMessage( "Starting C&C" )
         self.command = Comms.ArbiterControl()
         self.splash.showMessage( "Starting Listener" )
@@ -152,11 +190,16 @@ class QMain( QtWidgets.QMainWindow ):
         self.dets_listen.start()
 
     def _getPrefDims( self ):
-        """ Get prefered screen dimentions and prefered screen.
-            1 screen Centre
-            2 screens:
+        """ Get preferred screen dimensions and preferred display screen.
+            1  screen: Centre
+            2+ screens:
                 pick biggest
-                or if both the same size, use system defined primary
+                    or if both the same size, use system defined primary
+
+            Returns:
+                screen info (tuple):
+                    big_scr: (QScreen) The biggest or primary screen
+                    tgt_rect: (QRect) Centered rect in the big_scr
         """
         # Find Physicaly biggest Screen
         big_scr = self._app.primaryScreen()
@@ -183,6 +226,12 @@ class QMain( QtWidgets.QMainWindow ):
         return (big_scr, tgt_rect)
 
     def getNewFrame( self ):
+        """
+        Slot triggered when the ArbiterListener receives and enqueues data.  Updates the "Scene Model" with new centroid data
+        Emits:
+            QAbstractItemModel.emitUpdate()
+
+        """
         det_fps, time, strides, dets = self.dets_q.get()
         self.scene_model.frame_count += 1
         self.scene_model.dets_time = time
@@ -202,16 +251,38 @@ class QMain( QtWidgets.QMainWindow ):
             log.info( "Got centroids @{:3.2f} fps: {}".format( det_fps, roid_count ) )
 
     def sendCNC( self, verb, noun, value=None ):
+        """
+        Send Command & Control messages to the MoCap system via the Arbiter.  Whatever is selected in the shared
+        selection model will be considered a target for this CnC change, we currently only send to Pi Cams, but this
+        should be extended to sync control devices and other future supported MoCap Cameras.
+        Args:
+            verb: (str) GET, TRY, or SET a property
+            noun: (str) property to be acted on
+            value: (str) value to set, if applicable.
+        """
         indexes = self.selection_model.selection().indexes()
         tgt_list = [ i.data(role=Nodes.ROLE_INTERNAL_ID) for i in indexes if i.data(role=ROLE_TYPEINFO) == Nodes.TYPE_CAMERA_MC_PI ]
         self.command.send( verb, noun, value, tgt_list )
         log.info( "SENT: {}, {}, {} to {}".format( verb, noun, value, tgt_list ) )
 
     def logNreport( self, msg, dwel=1200 ):
+        """
+        Log a message and show it on the status bar.
+        Args:
+            msg: (str) Message
+            dwel: (int) How long to stay on the status bar
+        """
         log.info( msg )
         self.status_bar.showMessage( msg, dwel )
 
-    def onSelectionChanged( self, selected, deselected ):
+    def onSelectionChanged( self, _selected, _deselected ):
+        """ DEBUG ONLY
+        Slot registered to the shared selection model.
+        Presently just logs selection for debugging
+        Args:
+            _selected: (unused) required to match Signal's prototype
+            _deselected: (unused) required to match Signal's prototype
+        """
         # provided "selcted/deselected" are only this change. so need to dip into the selection model
         # to understand what's happening
         indexes = self.selection_model.selection().indexes()
@@ -248,6 +319,7 @@ class QMain( QtWidgets.QMainWindow ):
         self.setStatusBar( self.status_bar )
 
     def _buildActions( self ):
+        """ NO ACTIOINS USED IN CURRENT EMBODYMENT"""
         self._actions[ "newAction" ] = QtWidgets.QAction( QtGui.QIcon( "new.png" ), '&New', self )
         self._actions[ "newAction" ].setShortcut( QtGui.QKeySequence.New )
         self._actions[ "newAction" ].setStatusTip( "Create a New File" )
@@ -263,6 +335,7 @@ class QMain( QtWidgets.QMainWindow ):
         self._actions[ "aboutAction" ].triggered.connect( self._aboutHelpCB )
 
     def _buildMenuBar( self ):
+        """ NO ACTIOINS USED IN CURRENT EMBODYMENT"""
         # Make Menu Actions
         menu_bar = self.menuBar()
         fileMenu = menu_bar.addMenu( "&File" )
@@ -274,12 +347,16 @@ class QMain( QtWidgets.QMainWindow ):
         helpMenu.addAction( self._actions[ "aboutAction" ] )
 
     def _buildToolbar( self ):
+        """ NO ACTIOINS USED IN CURRENT EMBODYMENT"""
         mainToolBar = self.addToolBar( "Main" )
         mainToolBar.setMovable( False )
         mainToolBar.addAction( self._actions[ "newAction" ] )
         mainToolBar.addSeparator()
 
     def _buildUI( self ):
+        """
+        Assemble the UI Components and attach to Data Model and Selection Model, Register relevant events
+        """
         self.setWindowTitle( "Main Window" )
 
         self.splash.showMessage( "Setting up Actions" )
@@ -340,7 +417,9 @@ class QMain( QtWidgets.QMainWindow ):
         # setup status bar
         self._buildStatusBar()
 
-        # TODO: Handle windowClosing and stop threads / close sockets!
+        # Handle windowClosing and stop threads / close sockets etc
+        # Quit the ArbiterListen thread
+        self._app.aboutToQuit.connect( self.dets_listen.quit )
 
 
 if __name__ == "__main__":

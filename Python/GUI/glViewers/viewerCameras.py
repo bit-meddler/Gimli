@@ -10,7 +10,7 @@ from PySide2 import QtCore, QtGui, QtWidgets, QtOpenGL
 import ctypes
 from OpenGL import GL, GLU, GLUT
 
-from Core.math3D import genOrthoProjectionPlains, FLOAT_T, ID_T, TWO_PI
+from Core.math3D import genOrthoProjectionPlans, FLOAT_T, ID_T, TWO_PI
 import Core.labelling as lid
 
 from GUI import getStdIcon, Nodes, ROLE_INTERNAL_ID, ROLE_NUMROIDS, ROLE_TYPEINFO
@@ -18,6 +18,10 @@ from GUI import getStdIcon, Nodes, ROLE_INTERNAL_ID, ROLE_NUMROIDS, ROLE_TYPEINF
 SQUARES = [ x ** 2 for x in range( 9 ) ]
 
 class Shaders( object ):
+    """
+    Conveniane to hold Shaders used in the cameraviewer.
+    ToDo: Something more elegant for this when the shaders are working properly.
+    """
     dot_vtx_src = """
     # version 330 core
 
@@ -204,7 +208,17 @@ class Shaders( object ):
 
 
 class QGLCameraPane( QtWidgets.QOpenGLWidget ):
+    """
+    A viewer for "Looking through" any selected MoCap Camera, or seeing a multi-view of several cameras at once.
 
+    ToDo: Store camera Zoom, Width and Locus in the Scene Model - don't cache here
+    ToDo: Current multi-viewport method is probably wrong.  Can we do this better?
+    ToDo: Acumulate wand "Ribbons" when calibrating to visualize coverage of each camera's FoV.
+    ToDo: Future cameras may be able to return images.  Display them on a texture in the BG.
+    ToDo: With a sucessful camera calibration, we will have radial distortion data.  Use it.
+    ToDo: With both above, unwarp the texture too!
+    """
+    # Camera view defaults
     ZOOM_SCALE    = 1.075
     TRUCK_SCALE   = 0.01
     DEFAULT_WIDTH = 2.5
@@ -288,6 +302,9 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
         self._gl_ready = False
 
     def initializeGL( self ):
+        """
+        Setup penGL Render area and shader programs.
+        """
         GL.glClearColor( 0.0, 0.0, 0.0, 1.0 )
 
         # ISSUE #9
@@ -382,6 +399,15 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
 
     # OpenGL funtions ----------------------------------------------------------
     def resizeGL( self, width, height ):
+        """
+        Overload QOpenGLWidget.resizeGL.  Recompute the size of th esub-windows and update their 'cameras'
+        Args:
+            width: (int) New Canvas width
+            height: (int) New Canvas height
+
+        Returns:
+
+        """
         self._wh = ( width, height )
         rows, cols = self._rc
         if( rows < 0 or cols < 0):
@@ -394,7 +420,9 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
             self.updateProjection( cam )
 
     def paintGL( self ):
-        """ Draw the cameras """
+        """
+        Draw selected cameras, and display dets.
+        """
         if( not self._gl_ready ):
             return
 
@@ -430,8 +458,6 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
                 GL.glUniformMatrix4fv( self._proj_loc, 1, GL.GL_TRUE, self._ortho_navigation[ cam_idx ][ "P" ] )
 
                 GL.glViewport( x, y, w, h )
-
-                # ToDo: Far in the future, draw an image - texture on a quad in BG?
 
                 # Draw Roids
                 sin, sout = self._strider[ cam_idx ]
@@ -469,6 +495,11 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
 
     # Qt Functions -------------------------------------------------------------
     def wheelEvent( self, event ):
+        """
+        Overloaded QWidget function - Zoom in or out the display of the camera the cursor is in
+        Args:
+            event: (QMouseEvent?) The mouse event
+        """
         x, y = event.x(), event.y()
         cam_idx = self._camFromXY( x, y )
         if( cam_idx < 0 ):
@@ -488,6 +519,11 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
         self.updateProjection( cam_idx )
 
     def mousePressEvent( self, event ):
+        """
+        Overloaded QWidget function - Truck or Zoom the Camera's view
+        Args:
+            event: (QMouseEvent?) The mouse event
+        """
         x, y = event.x(), event.y()
         cam_idx = self._camFromXY( x, y )
         if( cam_idx < 0 ):
@@ -512,6 +548,11 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
             self._navigate = cam_idx
 
     def mouseReleaseEvent( self, event ):
+        """
+        Overloaded QWidget function - Complete the interaction
+        Args:
+            event: (QMouseEvent?) The mouse event
+        """
         update_camera = False
 
         if( self._panning ):
@@ -530,6 +571,11 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
         self._navigate = None
 
     def mouseMoveEvent( self, event ):
+        """
+        Overloaded QWidget function - Update the camera's projection if needed
+        Args:
+            event: (QMouseEvent?) The mouse event
+        """
         update_camera = False
 
         if( self._panning or self._zooming ):
@@ -561,6 +607,12 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
             self.updateProjection( self._navigate )
 
     def mouseDoubleClickEvent( self, event ):
+        """ DEBUG
+        Overloaded QWidget function - Shortcut to reset given camera's projection.
+        For Debug will print out the camera's projection matrix
+        Args:
+            event: (QMouseEvent?) The mouse event
+        """
         x, y = event.x(), event.y()
         cam_idx = self._camFromXY( x, y )
         if( cam_idx < 0 ):
@@ -586,11 +638,26 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
                 self.reorderCamList()
 
     def minimumSizeHint( self ):
+        """
+        Overloaded QWidget function - minimum usable space
+        """
         return QtCore.QSize( 640, 480 )
 
 
     # functional ---------------------------------------------------------------
     def acceptNewData( self, dets, strides, ids ):
+        """
+        When a new "Data Frame" comes in, put the detections on the VBO.  If Labelling enabled, attempt this and put the
+        resulting ID data on it's VBO to colour code the dets.
+
+        Args:
+            dets: (ndarray) Nx3 Array of detections, [x,y,r]
+            strides: ndarray) N+1 strides array
+            ids: (ndarray) Nx1 Array of IDs
+
+        Emits:
+            self.update(): requests a redraw
+        """
         self.stride_list = np.asarray( strides, dtype=np.int32 )
 
         # conform dets
@@ -627,6 +694,11 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
         self.update()
 
     def updateProjection( self, cam_idx ):
+        """
+        Compute the given camera's projection matrix based on current sub-window size and it's view paramiters.
+        Args:
+            cam_idx: (int) Index of camera to update
+        """
         if( cam_idx is None ):
             return
         cam = self._ortho_navigation[ cam_idx ]
@@ -634,6 +706,10 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
         self.update()
 
     def _camlistChanged( self ):
+        """
+        The internal camera list is controled by the shared selection model, for convenience we're only interested in
+        the selected cameras.
+        """
         self.num_cams = len( self.cam_list )
         self._rc = self.genDimsSquare( self.num_cams )
 
@@ -645,7 +721,9 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
         self.resizeGL( *self._wh ) # recalculate the sub windows & redraw
 
     def resetAllCams( self ):
-        # Populate cameras with Ortho Navigation
+        """
+        Set all camera's views to the default and generate their Projection matrix
+        """
         self._ortho_navigation = []
         for i in range( self.num_cams ):
             self._ortho_navigation.append( { "zoom"  : self.DEFAULT_ZOOM,
@@ -657,6 +735,18 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
         self.update()
 
     def projectionFromNav( self, zoom, width, orig_x, orig_y  ):
+        """
+        Create a Projection Matrix based on the current subwindow size and the parameters.
+
+        Args:
+            zoom: (float) Zoom factor
+            width: (float) Horizontal FoV in NDCs
+            orig_x: (float) "interest" X
+            orig_y: (float) "interest" Y
+
+        Returns:
+            projection matrix (ndarray) 4x4 OpenGL Projection matrix
+        """
         w, h = self._subwindow_sz
         if( w < 1 or h < 1 ):
             return np.eye( 4, dtype=FLOAT_T )
@@ -669,20 +759,32 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
         o_t = orig_y + extent
         o_b = orig_y - extent
 
-        return genOrthoProjectionPlains( o_l, o_r, o_b, o_t, self.clip_nr, self.clip_far )
+        return genOrthoProjectionPlans( o_l, o_r, o_b, o_t, self.clip_nr, self.clip_far )
 
     def _marshelStrides( self ):
+        """
+        Precompute a stride list for the number of cameras we are displaying
+        """
         self._strider = []
         for _in, _out in zip( range(0,self.num_cams), range(1,self.num_cams+1) ):
             self._strider.append( (_in,_out) )
 
     def reorderCamList( self, lead=None ):
+        """
+        As Cameras are added to or removed from the selection Queue the "lean" camera will change.  we need to keep
+        track of this camera.
+        Args:
+            lead: (int) cam_id of the lead camera
+        """
         self.cam_list = sorted( self.cam_list )
         if( lead is not None and lead in self.cam_list ):
             self.cam_list.remove( lead )
             self.cam_list.append( lead )
 
     def modeToggle( self ):
+        """
+        Toggle the view mode between Selected cameras or Lead camera only
+        """
         self.draw_lead = bool( self._lead_button.isChecked() )
         width, height = self._wh
         if( self.draw_lead ):
@@ -692,6 +794,16 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
         self.resizeGL( width, height )
 
     def _camFromXY( self, x, y ):
+        """
+        From the x,y coordinates (in the space of th eWidget's canvas) find out the camera the coordinates are in.
+
+        Args:
+            x: (int) event coordinate
+            y: (int) event coordinate
+
+        Returns:
+            idx: (int) index of camera under the coordinates, or -1
+        """
         if (self.draw_lead):
             return self.cam_list[ -1 ]
 
@@ -708,10 +820,14 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
     @staticmethod
     def genDimsSquare( num_cams ):
         """
-        Determine rows / cols needed to pack num_cams into to keep square
+        Determine the rows / cols needed to pack 'num_cams' views into to keep square.
+        Args:
+            num_cams: (int) number of cameras to arrange
 
-        :param num_cams: (int) number of cameras to arrange
-        :return: (int,int) Rows, Cols
+        Returns:
+            size: (tuple)
+                rows: (int)
+                cols: (int)
         """
         if( num_cams < 1 ):
             return (-1, -1)
@@ -731,10 +847,18 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
         return (x, y)
 
 
-# ah. no it needs to be in a widget
 class QGLCameraView( QtWidgets.QMainWindow ):
+    """
+    Container for the QGLWidget, gives us space for Toolbars, etc.
+    """
 
     def __init__( self, parent, live=True ):
+        """
+        Setup the viewer
+        Args:
+            parent: (Q?) widget this widget is inside
+            live: (bool) Live or Offline mode flag
+        """
         super( QGLCameraView, self ).__init__()
 
         # selection Model and data Model
@@ -752,6 +876,12 @@ class QGLCameraView( QtWidgets.QMainWindow ):
         self._qgl_pane.update()
 
     def setModels( self, item_model, selection_model ):
+        """
+        Once instanciated, all Gimli Editors and views need to get the shared  Model and Selection attached.
+        Args:
+            item_model: Main Application's Model
+            selection_model: Main Application's Model
+        """
         self._model = item_model
         self._model.dataChanged.connect( self.onDataChange )
         self._select = selection_model
@@ -760,9 +890,21 @@ class QGLCameraView( QtWidgets.QMainWindow ):
         self._qgl_pane._camera_group = item_model.groups[ Nodes.TYPE_GROUP_MOCAP ]
 
     def onDataChange( self, change_idx ):
+        """
+        Slot triggered when main application gets or selects a new frame
+        Args:
+            change_idx: (any) I can't remember, but it was a good idea at the tiem
+        """
         self._qgl_pane.acceptNewData( self._model.dets_dets, self._model.dets_strides, None )
 
-    def onSelectionChanged( self, selected, deselected ):
+    def onSelectionChanged( self, _selected, _deselected ):
+        """
+        Slot triggered on selection changes.
+        This updates the internal camera list of the GL viewer.
+        Args:
+            _selected:
+            _deselected:
+        """
         if( self._select is None ):
             return
 
@@ -780,6 +922,10 @@ class QGLCameraView( QtWidgets.QMainWindow ):
         self._qgl_pane._camlistChanged()
 
     def _setupToolBar( self ):
+        """
+        Setup the Toolbar.  Only enable wand detection in "live" mode.
+
+        """
         toolbar = QtWidgets.QToolBar( "Camera view tools" )
         toolbar.setIconSize( QtCore.QSize( 16, 16 ) )
         toolbar.setMovable( False )
@@ -832,7 +978,7 @@ class QGLCameraView( QtWidgets.QMainWindow ):
         self.label_mode.setCheckable( True )
         toolbar.addWidget( self.label_mode )
 
-        # Todo: Write a 3-mkr detector, allow these to toggle something
         self.selector = QtWidgets.QComboBox()
         self.selector.addItems( ["5-mkr Wand", "3-mkr Wand", "1 Point"] )
         toolbar.addWidget( self.selector )
+

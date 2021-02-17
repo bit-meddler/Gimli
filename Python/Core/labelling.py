@@ -51,6 +51,16 @@ PARALLEL_THRESHOLD = np.tan( np.deg2rad( 10 ) ) # degrees of deviance allowed
 
 
 def distanceMatrix( A ):
+    """
+    For all elements of list A Calculate the distance from one element to the others. Returning the Distance Matrix.
+    This will work for 2D or 3D elements.
+
+    Args:
+        A: (listlike) A list of N 'points' we want to get distance information for
+
+    Returns:
+        dm (ndarray) NxN Array of distance from i to j accessed as dm[i][j].  dm[i][j]===dm[j][i]
+    """
     rows = len( A )
 
     dm = np.empty( (rows, rows), dtype=np.float32 )
@@ -71,12 +81,23 @@ def distanceMatrix( A ):
 
 def labelWand( dets, s_in, s_out, verbose=False ):
     """
+    From the slice of centroids expressed as dets[ s_in:s_out ] try to find a Vicon Style 5-marker calibration wand.
+    Currently only attempts to label a frame with exactly 5 detections.
 
-    :param dets: array of 2D detections
-    :param s_in: stride in index
-    :param s_out: stride out index
-    :param verbose: debug flag
-    :return: best labelling of each det in order (if labelled) or None if not labelled, and the hypothesis score
+    ToDo: Handle 5+ detections
+    ToDo: Find a 3mkr wand.
+
+    Args:
+        dets: (ndarray) Frame of Centroids
+        s_in: (int) Stride in (inclusive)
+        s_out: (int) Stride out (exclusive)
+        verbose: (bool) Verbose logging
+
+    Returns:
+        labelling (tuple):
+            ids: (list) In lock-step with detections, idx[ idx ] contains the wand ID of the det[ idx ]
+                 (None) if no labelling was possible
+            best_score: (float) score of this labelling, closest to 1.0 is best
     """
     num_dets = s_out - s_in
 
@@ -164,7 +185,16 @@ def labelWand( dets, s_in, s_out, verbose=False ):
 def labelWandFrame( dets, strides ):
     """
     Labels the whole frame described by the dets array and the stride list.
-    returns ids array, and label report of which cameras got labelled
+    ToDo: In the future this could be cheaply parallelized
+
+    Args:
+        dets: (ndarray) Nx2 array of dets for all cameras
+        strides: (ndarray) N+1 array of Stride in/out indexes for the cameras
+
+    Returns:
+        label data (tuple)
+            ids: (ndarray) Nx1 array of IDs in lock step the the dets,
+            report: (list) list of cameras that have been labelled on this frame
     """
     report = []
     ids = np.full( len( dets ), 0, dtype=ID_T )

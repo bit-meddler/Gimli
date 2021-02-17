@@ -56,7 +56,8 @@ class UINode( object ):
     def _survey( self ):
         for trait in self.traits.values():
             if( "a" in trait.mode ):
-                self.has_advanced |= True
+                self.has_advanced = True
+                break
 
 class PiCamUINode( UINode ):
     def __init__( self ):

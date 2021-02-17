@@ -9,7 +9,10 @@ import socket
 
 
 class SelectableQueue( SimpleQueue ):
-    """ Nastiest hack I've ever done.  (To Date) """
+    """ A (Threadsafe) Queue that can be polled in a "select" statement, such that queued items can be 'got' without
+        spinning.
+        Nastiest hack I've ever done.  (To Date)
+    """
 
     PORT = 0 # Binding to port Zero will find a random, available, non-privaledged port
 
@@ -28,18 +31,39 @@ class SelectableQueue( SimpleQueue ):
 
         temp_in.close()
 
-    def fileno( self ): # select asks for the fd
+    def fileno( self ):
+        """
+        Select asks for the filedevice to poll it
+        Returns:
+            fileno: (int) filehandle of the input socket
+        """
         return self._in.fileno()
 
     def put( self, item ):
+        """
+        Overload the Queue put function to emit a packet as well
+        Args:
+            item: (any) Queued Item
+        """
         super( SelectableQueue, self ).put( item ) # Might block for a moment
         self._out.send( b"!" )
 
     def get( self ):
-        self._in.recv( 1 ) # only read one byte, so if 2 queue items exist, there will be readables on the socket
+        """
+        Overload the Queue get function to remove a byte from the socket
+        Returns:
+            item: (any) Queued Item
+        """
+        # only read one byte, so if 2 queue items exist, there will still be readables on the socket
+        self._in.recv( 1 )
         return super( SelectableQueue, self ).get()
 
     def cleanClose( self ):
+        """
+        This Queue has responsibilities to the sockets it created.  Need to close these cleanly.
+        Returns:
+
+        """
         self._out.close()
         self._in.close()
 
