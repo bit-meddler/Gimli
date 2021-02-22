@@ -44,7 +44,7 @@ We are running on Python 3, currently developing on 3.7.2.  To get the sources a
 ### First Run
 Just to prove it actually does something remotly like a MoCap system, open a terminal/cmd window and cd into midget/Python/Apps, then run `python simArbiter.py` this will simulate a 10 camera MoCap system, and play back a wand wave at 25fps.  You can experiment with the arguments, add `-r 10 -k 1` to play back more slowly (10fps).
 
-With an Arbiter running, you can launch the 'Camera Control UI' from midget/Python/Experiments.  This is getting most active development as to make a MoCap camera you need good instrumentation to see if it's working, and to start thinking about a camera calibration routine you need to visualize a wand wave and see the results of wand detection, and finally visualize the 3D positions of the Calibrated cameras.
+With an Arbiter running, you can launch the 'Camera Control UI' from midget/Python/Apps.  This is getting most active development as to make a MoCap camera you need to: be able to tell it what to do; have good instrumentation to see if it's working; to start thinking about a camera calibration routine you need to visualize a wand wave and see the results of wand detection; and finally visualize the 3D positions of the Calibrated cameras, parhaps even the 3D position of the wand.
 
 As the project develops Core functions will make their way into Rust or C++.  We'll cross that bridge later.
 
@@ -60,7 +60,7 @@ Before we're even in a position to collect the data and work out a calibration s
 
 ## Apps we need
 1. Arbiter
-2. Camera Config / Monitoring
+2. Camera Config / 2D Monitoring
 3. Calibration & Visualization (2D/3D)
 4. CLI Calibration
 5. 3D Scene Management
