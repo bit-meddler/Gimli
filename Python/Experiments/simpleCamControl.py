@@ -7,7 +7,7 @@ import random
 # Workaround not being in PATH
 import os, sys
 _git_root_ = os.path.dirname( os.path.dirname( os.path.dirname( os.path.realpath(__file__) ) ) )
-CODE_PATH = os.path.join( _git_root_, "midget", "Python" )
+CODE_PATH = os.path.join( _git_root_, "Gimli", "Python" )
 sys.path.append( CODE_PATH )
 
 from Comms import piCam

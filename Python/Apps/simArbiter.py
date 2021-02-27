@@ -11,8 +11,8 @@
 import os, sys
 _git_root_ = os.path.dirname( os.path.dirname( os.path.dirname( os.path.dirname( os.path.realpath(__file__) ) ) ) )
 print( _git_root_ )
-CODE_PATH = os.path.join( _git_root_, "midget", "Python" )
-DATA_PATH = os.path.join( _git_root_, "midget", "ExampleData" )
+CODE_PATH = os.path.join( _git_root_, "Gimli", "Python" )
+DATA_PATH = os.path.join( _git_root_, "Gimli", "ExampleData" )
 sys.path.append( CODE_PATH )
 
 # Logging

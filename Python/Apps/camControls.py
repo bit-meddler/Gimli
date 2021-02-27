@@ -10,9 +10,9 @@ import zmq
 
 import sys, os
 _git_root_ = os.path.dirname( os.path.dirname( os.path.dirname( os.path.dirname( os.path.realpath(__file__) ) ) ) )
-CODE_PATH = os.path.join( _git_root_, "midget", "Python" )
+CODE_PATH = os.path.join( _git_root_, "Gimli", "Python" )
 sys.path.append( CODE_PATH )
-RES_PATH = os.path.join( _git_root_, "midget", "Python", "GUI", "resources" ) # to be replaced with a resource bundle
+RES_PATH = os.path.join( _git_root_, "Gimli", "Python", "GUI", "resources" ) # to be replaced with a resource bundle
 
 logging.basicConfig()
 log = logging.getLogger( __name__ )

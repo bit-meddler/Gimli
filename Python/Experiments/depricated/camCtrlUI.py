@@ -14,9 +14,9 @@ import zmq
 
 import sys, os
 _git_root_ = os.path.dirname( os.path.dirname( os.path.dirname( os.path.dirname( os.path.realpath(__file__) ) ) ) )
-CODE_PATH = os.path.join( _git_root_, "midget", "Python" )
+CODE_PATH = os.path.join( _git_root_, "Gimli", "Python" )
 sys.path.append( CODE_PATH )
-RES_PATH = os.path.join( _git_root_, "midget", "Python", "GUI", "resources" ) # to be replaced with a resource bundle
+RES_PATH = os.path.join( _git_root_, "Gimli", "Python", "GUI", "resources" ) # to be replaced with a resource bundle
 
 
 logging.basicConfig()
@@ -889,8 +889,8 @@ class QMain( QtWidgets.QMainWindow ):
         self._app = parent
 
         # app config
-        self._app.setApplicationName( "Testing Midget UI" )
-        self._app.setOrganizationName( "Midget Software" )
+        self._app.setApplicationName( "Testing Gimli UI" )
+        self._app.setOrganizationName( "Gimli Software" )
         self._app.setOrganizationDomain( "" )
 
         screen, placement = self._getPrefDims()
@@ -1013,7 +1013,7 @@ class QMain( QtWidgets.QMainWindow ):
         self.close()
 
     def _aboutHelpCB( self ):
-        QtWidgets.QMessageBox.about(self, "About Midget",
+        QtWidgets.QMessageBox.about(self, "About Gimli",
             "I was born the son of a poor Filipino merchant. "
             "I remember I would sit on the stoop of my tenement brownstone "
             "on the lower East Side. I was... I was... I was... Crying!"
