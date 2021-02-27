@@ -7,7 +7,7 @@ This will need more functionality possibly?  Search for nodes?  Filter nodes?
 import logging
 from PySide2 import QtCore, QtGui, QtWidgets, QtOpenGL
 
-from GUI import getStdIcon, Camera, Mesh
+from GUI import getStdIcon
 
 class QDockingOutliner( QtWidgets.QDockWidget ):
 

@@ -10,6 +10,7 @@ class Camera( Node ):
         We need to be OpenGL Compatible for drawing, but leave that upto UINodes
     """
     TYPE_INFO = TYPE_CAMERA
+    DEFAULT_NAME = "Camera"
 
     def __init__( self, name, parent=None ):
         super( Camera, self ).__init__( name, parent )

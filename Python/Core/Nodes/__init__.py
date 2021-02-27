@@ -1,14 +1,15 @@
 """ Nodes representing entities in the scene.  Implementation details in the nodes themselves.
 """
 
-# -------------------- Main Type Registry ------------------------------------ #
+# -------------------- Main Type Registry ---------------------------------------------------------------------------- #
+# If you're making a new node, make sure it doesn't collide with any of these
 TYPE_NODE = "NODE"
 TYPE_ROOT = "ROOT"
 TYPE_CAMERA = "CAMERA"
 TYPE_CAMERA_MC_PI = "PI_CAMERA"
 TYPE_SYNC_PI = "PI_SYNC"
 TYPE_VIEW = "VIEW"
-TYPE_TARGET = "TARGET"
+#TYPE_TARGET = "TARGET"
 
 TYPE_GROUP = "GP"
 TYPE_GROUP_SYSTEM = "GP_SYSTEM"
@@ -17,27 +18,12 @@ TYPE_GROUP_VIEW = "GP_VIEW"
 TYPE_GROUP_TARGETS = "GP_TARGETS"
 
 
-# Default names are given when new Nodes are created
-DEFAULT_NAMES = {
-    TYPE_NODE : "Node",
-    TYPE_ROOT : "Root",
-    TYPE_CAMERA : "Camera",
-    TYPE_CAMERA_MC_PI : "Camera",
-    TYPE_SYNC_PI : "Sync Unit",
-    TYPE_VIEW : "View",
-    TYPE_TARGET : "Target",
-
-    TYPE_GROUP : "Group",
-    TYPE_GROUP_SYSTEM : "System",
-    TYPE_GROUP_MOCAP : "Cameras",
-    TYPE_GROUP_VIEW : "Views",
-    TYPE_GROUP_TARGETS : "Targets",
-}
 # ------------------------- The main Node base class ----------------------------------------------------------------- #
 class Node( object ):
     """ Abstract base class for Nodes. """
 
     TYPE_INFO = TYPE_NODE
+    DEFAULT_NAME = "Node"
 
     def __init__( self, name, parent=None ):
         """
@@ -210,6 +196,7 @@ class RootNode( Node ):
     The Root node, there should only ever be one of these, and it is parent of the whole tree structure
     """
     TYPE_INFO = TYPE_ROOT
+    DEFAULT_NAME = "Root"
 
     def fullPath( self ):
         return ""
@@ -219,6 +206,7 @@ class GroupNode( Node ):
     A Group Node is a display controlling node, not actually evaluated or doing anything.
     """
     TYPE_INFO = TYPE_GROUP
+    DEFAULT_NAME = "Group"
 
     def displayName( self ):
         """
@@ -230,29 +218,48 @@ class GroupNode( Node ):
 
 class GroupSystem( GroupNode ):
     TYPE_INFO = TYPE_GROUP_SYSTEM
+    DEFAULT_NAME = "System"
 
 class GroupViews( GroupNode ):
     TYPE_INFO = TYPE_GROUP_VIEW
+    DEFAULT_NAME = "Views"
 
 class GroupMoCapCams( GroupNode ):
     TYPE_INFO = TYPE_GROUP_MOCAP
+    DEFAULT_NAME = "Cameras"
 
 class GroupTargets( GroupNode ):
     TYPE_INFO = TYPE_GROUP_TARGETS
+    DEFAULT_NAME = "Targets"
 
 
+########################################################################################################################
+# The Stuff to change when we add new nodes is here
+########################################################################################################################
 # As we add "Functional" Nodes, we'll need to import them and load the LUT up with the implementations.
-from . import camera, mcCamera
+from . import camera, mcCamera, view
+
 
 NODE_LUT = {
     camera.Camera.TYPE_INFO    : camera.Camera,
     mcCamera.MoCapPi.TYPE_INFO : mcCamera.MoCapPi,
+
+    view.View.TYPE_INFO        : view.View,
 
     RootNode.TYPE_INFO         : RootNode,
     GroupSystem.TYPE_INFO      : GroupSystem,
     GroupViews.TYPE_INFO       : GroupViews,
     GroupMoCapCams.TYPE_INFO   : GroupMoCapCams,
     GroupTargets.TYPE_INFO     : GroupTargets,
+}
+
+NODE_DEPENDANCIES = {
+    TYPE_CAMERA_MC_PI: TYPE_GROUP_MOCAP,
+    TYPE_GROUP_MOCAP : TYPE_GROUP_SYSTEM,
+
+    TYPE_SYNC_PI     : TYPE_GROUP_SYSTEM,
+
+    TYPE_VIEW        : TYPE_GROUP_VIEW,
 }
 
 def factory( node_type, name=None, parent=None ):
@@ -266,7 +273,7 @@ def factory( node_type, name=None, parent=None ):
     Returns:
         node: (nodelike) The new Node.
     """
-    name = name or DEFAULT_NAMES[ node_type ]
+    name = name or NODE_LUT[ node_type ].DEFAULT_NAME
     return NODE_LUT[ node_type ]( name, parent )
 
 
@@ -280,7 +287,7 @@ __all__ = [
     "TYPE_CAMERA_MC_PI",
     "TYPE_SYNC_PI",
     "TYPE_VIEW",
-    "TYPE_TARGET",
+#    "TYPE_TARGET",
 
     "TYPE_GROUP_SYSTEM",
     "TYPE_GROUP_CAMERA",
