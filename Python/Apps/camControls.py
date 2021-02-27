@@ -23,7 +23,7 @@ terse_log = logging.Formatter( "%(asctime)s.%(msecs)04d [%(levelname)-8s] %(mess
 
 import Comms
 
-from GUI import QDarkPalette, QBrownPalette, getStdIcon, Camera, Mesh, SceneModel, Nodes
+from GUI import QDarkPalette, QBrownPalette, getStdIcon, SceneModel, Nodes
 
 from GUI.editors.dockingLog        import QDockingLog
 from GUI.editors.dockingAttributes import QDockingAttrs

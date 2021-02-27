@@ -100,6 +100,43 @@ class QBrownPalette( QPaletteOveride ):
         super( QBrownPalette, self ).__init__( *args )
 
 
+# UI Placement Helper
+def getPrefDims( q_app ):
+    """ Get preferred screen dimensions and preferred display screen.
+        1  screen: Centre
+        2+ screens:
+            pick biggest
+                or if both the same size, use system defined primary
+
+        Returns:
+            screen info (tuple):
+                big_scr: (QScreen) The biggest or primary screen
+
+                tgt_rect: (QRect) Centered rect in the big_scr
+    """
+    # Find Physicaly biggest Screen
+    big_scr = q_app.primaryScreen()
+    big_dim = q_app.primaryScreen().physicalSize().width()
+    screens = q_app.screens()
+    for screen in screens:
+        width = screen.physicalSize().width()
+        if (width > big_dim):
+            big_scr = screen
+            big_dim = width
+
+    # set window to fit nicely inside it
+    desk_w = big_scr.availableGeometry().width()
+    desk_h = big_scr.availableGeometry().height()
+    width = desk_w * 0.75
+    height = desk_h * 0.75
+
+    # place in the screen's available canvas
+    x = ((desk_w - width) / 2) + big_scr.availableGeometry().left()
+    y = ((desk_h - height) / 2) + big_scr.availableGeometry().top()
+
+    tgt_rect = QtCore.QRect( x, y, width, height )
+
+    return (big_scr, tgt_rect)
 
 
 # - Scene Model --------------------------------------------------------------------------------------------------------
@@ -111,13 +148,6 @@ ROLE_TYPEINFO    = QtCore.Qt.UserRole + 2
 class SceneModel( QtCore.QAbstractItemModel ):
 
     DEFAULT_FLAGS = QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable
-
-    NODE_DEPENDANCIES = {
-        Nodes.TYPE_CAMERA_MC_PI : Nodes.TYPE_GROUP_MOCAP,
-        Nodes.TYPE_GROUP_MOCAP  : Nodes.TYPE_GROUP_SYSTEM,
-
-        Nodes.TYPE_SYNC_PI      : Nodes.TYPE_GROUP_SYSTEM,
-    }
 
     def __init__( self, root=None, parent=None ):
         super( SceneModel, self ).__init__( parent )
@@ -141,16 +171,16 @@ class SceneModel( QtCore.QAbstractItemModel ):
         # work out dep chain
         dep_chain = []
         node = node_type
-        while node in self.NODE_DEPENDANCIES:
-            dep_chain.append( self.NODE_DEPENDANCIES[ node ] )
-            node = self.NODE_DEPENDANCIES[ node ]
+        while node in Nodes.NODE_DEPENDANCIES:
+            dep_chain.append( Nodes.NODE_DEPENDANCIES[ node ] )
+            node = Nodes.NODE_DEPENDANCIES[ node ]
 
         # then backwards to build hierarchy if it doesn't exist
         last_parent = self.root
         while( len( dep_chain ) > 0 ):
             node_t = dep_chain.pop()
             if( node_t not in self.groups ):
-                last_parent = Nodes.factory( node_t, Nodes.DEFAULT_NAMES[ node_t ], parent=last_parent )
+                last_parent = Nodes.factory( node_t, None, parent=last_parent )
                 self.groups[ node_t ] = last_parent
 
     def addNodeTo( self, new_node, parent_node ):
@@ -164,7 +194,7 @@ class SceneModel( QtCore.QAbstractItemModel ):
         self.endInsertRows()
 
     def addNode( self, new_node ):
-        node_gp = self.NODE_DEPENDANCIES.get( new_node.type_info, Nodes.TYPE_ROOT )
+        node_gp = Nodes.NODE_DEPENDANCIES.get( new_node.type_info, Nodes.TYPE_ROOT )
         parent_node = self.groups.get( node_gp, self.root )
         self.addNodeTo( new_node, parent_node )
 
@@ -288,50 +318,3 @@ class SceneModel( QtCore.QAbstractItemModel ):
 
 
 
-
-# - Selectables - These need to become "UI Nodes" or something
-class Selectable( object ):
-    TRAITS = {}
-    HAS_ADV = False
-    TRAIT_ORDER = []
-    PRIORITY = 666
-
-    @staticmethod
-    def getTreeIcon():
-        return _getStdIcon( QtWidgets.QStyle.SP_TitleBarMenuButton )
-
-    def getAttrs( self, advanced=False ):
-        return self.TRAITS
-
-
-class Camera( Selectable ):
-
-    # todo load from comms, or move comms.CAMERA_TRAITS in here
-    TRAITS = {      # def, lo,  hi, name, desc, advanced?
-        "fps"      : ( 60,  0,  60, "Frame rate", "Frames per second or 0 for external control", True),
-        "strobe"   : ( 20,  0,  70, "Strobe Power", "Power output of strobe (Watts)", False),
-        "shutter"  : (  8,  2, 250, "Shutter Period", "Shutter speed of sensor (100's of uSec)", False),
-        "mtu"      : (  0,  0,   8, "Jumbo Frames", "Max Packet size (1500 + Xkb)", True),
-        "iscale"   : (  0,  0,  16, "Image Decimation", "Image Scale in powers of 2 (1/2, 1/4, 1/8)", True),
-        "idelay"   : ( 15,  3, 255, "Image Delay", "Delay between sending Image fragments", True),
-        "threshold": (130,  0, 255, "Threshold", "Grey level threshold for centroid detection", False),
-        "numdets"  : ( 13,  0,  80, "Max Centroids", "Max Centroids in a Packet (10s of Centroids)", True),
-        "arpdelay" : ( 15,  0, 255, "ARP Delay", "Gratuatous ARP Delay", True),
-    }
-    HAS_ADV = True
-    TRAIT_ORDER = [ "strobe", "shutter", "threshold", "fps", "mtu", "numdets", "iscale", "idelay", "arpdelay" ]
-    PRIORITY = 5
-
-    def __init__( self, name, id ):
-        self.name = name
-        self.id = id
-
-    def getAttrs( self, advanced=False ):
-        if( advanced ):
-            return [ (t, self.TRAITS[ t ]) for t in self.TRAIT_ORDER ]
-        else:
-            return [ (t, self.TRAITS[ t ]) for t in self.TRAIT_ORDER if not self.TRAITS[t][5] ]
-
-
-class Mesh( Selectable ):
-    PRIORITY = 50
