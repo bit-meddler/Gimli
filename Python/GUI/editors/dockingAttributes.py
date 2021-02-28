@@ -16,7 +16,7 @@ from functools import partial
 from PySide2 import QtCore, QtGui, QtWidgets, QtOpenGL
 from GUI.widgets import QKnob
 from GUI import getStdIcon, ROLE_TYPEINFO
-from GUI.UINodes import uiNodeFactory
+from GUI.uiNodes import uiNodeFactory
 
 class QDockingAttrs( QtWidgets.QDockWidget ):
 
@@ -178,6 +178,7 @@ class QDockingAttrs( QtWidgets.QDockWidget ):
         # This info needs to work it's way back up to the app and MVC for the data
         print( key, action, value )
         app = self.parent()
+        # ToDo: We shouldn't be calling sendCNC here.  Setting this attr should trigger it, if the atter belongs to a camera
         app.sendCNC( action, key, value )
 
     def valueSet( self, key, action, value ):

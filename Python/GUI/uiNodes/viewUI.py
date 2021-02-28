@@ -1,4 +1,5 @@
-from . import UINode, Nodes, NodeTrait1D
+from . import UINode, Nodes
+from GUI.nodeTraits import TraitInt, TraitFloat
 
 class ViewUINode( UINode ):
     def __init__( self ):
@@ -6,7 +7,7 @@ class ViewUINode( UINode ):
         self.type_info = Nodes.TYPE_VIEW
 
         self.traits = {
-            "fps"        : NodeTrait1D( "fps", 60, 0, 60, int,
+            "fps"        : TraitInt( "fps", 60, 0, 60,
                                         value=None,
                                         units="Frames per Second",
                                         units_short="fps",
@@ -14,14 +15,14 @@ class ViewUINode( UINode ):
                                         desc="Camera Frame Rate",
                                         mode="rwa" ),
 
-            "strobe"     : NodeTrait1D( "strobe", 20, 0, 70, int,
+            "boogie"     : TraitFloat( "boogie", 0., 0., 1.,
                                         value=None,
-                                        units="Watts",
-                                        units_short="W",
-                                        human_name="Strobe Power",
-                                        desc="Strobe LED Power",
+                                        units="Linear",
+                                        units_short="",
+                                        human_name="Boogy factor",
+                                        desc="The amount of Boogy to use, 0-1",
                                         mode="rw" ),
         }
-        self.trait_order = [ "fps", "strobe", ]
+        self.trait_order = [ "fps", "boogie", ]
 
         self._survey()

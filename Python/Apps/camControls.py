@@ -23,7 +23,7 @@ terse_log = logging.Formatter( "%(asctime)s.%(msecs)04d [%(levelname)-8s] %(mess
 
 import Comms
 
-from GUI import QDarkPalette, QBrownPalette, getStdIcon, SceneModel, Nodes
+from GUI import QDarkPalette, QBrownPalette, getStdIcon, SceneModel, Nodes, ROLE_INTERNAL_ID, ROLE_TYPEINFO, ROLE_NUMROIDS
 
 from GUI.editors.dockingLog        import QDockingLog
 from GUI.editors.dockingAttributes import QDockingAttrs
@@ -261,7 +261,7 @@ class QMain( QtWidgets.QMainWindow ):
             value: (str) value to set, if applicable.
         """
         indexes = self.selection_model.selection().indexes()
-        tgt_list = [ i.data(role=Nodes.ROLE_INTERNAL_ID) for i in indexes if i.data(role=ROLE_TYPEINFO) == Nodes.TYPE_CAMERA_MC_PI ]
+        tgt_list = [ i.data(role=ROLE_INTERNAL_ID) for i in indexes if i.data(role=ROLE_TYPEINFO) == Nodes.TYPE_CAMERA_MC_PI ]
         self.command.send( verb, noun, value, tgt_list )
         log.info( "SENT: {}, {}, {} to {}".format( verb, noun, value, tgt_list ) )
 
