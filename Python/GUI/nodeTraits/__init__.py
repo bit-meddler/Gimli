@@ -1,6 +1,8 @@
 """ nodeTraits.py
 
-    There could be categories of traits eg. relating to cameras, bones, media assets
+    There could be categories of traits eg. relating to cameras, bones, media
+    assets.  This might be a way to allow Camera CnC messages to be sifted and
+    given special treatment.
 
     There will be Implementations of the following types of trait:
         0D:
@@ -19,13 +21,19 @@
         nD:
             matrix
 
-    And this should be mirrored in GUI.widgets to provide interfaces to control the trait
+    And this should be mirrored in GUI.widgets to provide interfaces to control
+    the trait.  For any new Type, Implement at least TRAIT_STYLE_EDIT.
 """
 
 # Type Registry
 TRAIT_TYPE_NONE  = "TRAIT_NONE"
 TRAIT_TYPE_INT   = "TRAIT_INT"
 TRAIT_TYPE_FLOAT = "TRAIT_FLOAT"
+
+# Interface Styles
+TRAIT_STYLE_EDIT = 0
+TRAIT_STYLE_KNOB = 1
+TRAIT_STYLE_DIAL = 2
 
 
 class AbstractNodeTrait( object ):
@@ -42,8 +50,9 @@ class AbstractNodeTrait( object ):
 
     def __init__(self, name, default, min, max,
                  value=None, units=None, units_short=None,
-                 human_name=None, desc=None, mode=None ):
+                 human_name=None, desc=None, mode=None, style=None ):
 
+        # ToDo: Needs an 'unbounded' condition.
         # required
         self.name = name
         self.default = default
@@ -57,6 +66,7 @@ class AbstractNodeTrait( object ):
         self.human_name = human_name or name
         self.desc = desc or ""
         self.mode = mode or "rw"
+        self.style = style or TRAIT_STYLE_EDIT
 
     def isValid( self, candidate ):
         """ Basic Validation, override for special cases """
@@ -99,9 +109,13 @@ class TraitFloat( AbstractNodeTrait ):
         return str( native_val )
 
 
+TRAIT_STYLE_EDIT = 0
+TRAIT_STYLE_KNOB = 1
+TRAIT_STYLE_DIAL = 2
+
 TRAIT_LUT = {
-    TRAIT_TYPE_INT :  TraitInt,
-    TRAIT_TYPE_FLOAT :  TraitFloat,
+    TRAIT_TYPE_INT   : TraitInt,
+    TRAIT_TYPE_FLOAT : TraitFloat,
 }
 
 def factory( type_info ):

@@ -9,6 +9,7 @@ TYPE_CAMERA = "CAMERA"
 TYPE_CAMERA_MC_PI = "PI_CAMERA"
 TYPE_SYNC_PI = "PI_SYNC"
 TYPE_VIEW = "VIEW"
+TYPE_TESTING = "TESTING"
 #TYPE_TARGET = "TARGET"
 
 TYPE_GROUP = "GP"
@@ -232,6 +233,9 @@ class GroupTargets( GroupNode ):
     TYPE_INFO = TYPE_GROUP_TARGETS
     DEFAULT_NAME = "Targets"
 
+class Testing( Node ):
+    TYPE_INFO = TYPE_TESTING
+    DEFAULT_NAME = "Trait Testing"
 
 ########################################################################################################################
 # The Stuff to change when we add new nodes is here
@@ -251,6 +255,8 @@ NODE_LUT = {
     GroupViews.TYPE_INFO       : GroupViews,
     GroupMoCapCams.TYPE_INFO   : GroupMoCapCams,
     GroupTargets.TYPE_INFO     : GroupTargets,
+
+    Testing.TYPE_INFO          : Testing,
 }
 
 NODE_DEPENDANCIES = {
@@ -293,6 +299,8 @@ __all__ = [
     "TYPE_GROUP_CAMERA",
     "TYPE_GROUP_VIEW",
     "TYPE_GROUP_TARGETS",
+
+    "TYPE_TESTING",
 
     "DEFAULT_NAMES",
     

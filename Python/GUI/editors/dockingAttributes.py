@@ -14,9 +14,10 @@ import logging
 from functools import partial
 
 from PySide2 import QtCore, QtGui, QtWidgets, QtOpenGL
-from GUI.widgets import QKnob
+
 from GUI import getStdIcon, ROLE_TYPEINFO
 from GUI.uiNodes import uiNodeFactory
+from GUI.widgets import uiTraitFactory
 
 class QDockingAttrs( QtWidgets.QDockWidget ):
 
@@ -139,21 +140,28 @@ class QDockingAttrs( QtWidgets.QDockWidget ):
                 #print( "skipping", key )
                 continue
 
-            # Label
+            # Get the appropriate Knob, Dial, or Edit
+            ControlClass = uiTraitFactory( t.TYPE_INFO, t.style )
+            if( ControlClass is None ):
+                print( "No Control for '{}' with style '{}'".format( t.name, t.style ) )
+                continue
+
+            # Add Label
             lab = QtWidgets.QLabel( t.name )
             lab.setToolTip( key )
             grid.addWidget( lab, depth, 0 )
 
-            # Knob
-            knob = QKnob( self, t.max, t.min, t.default, t.desc )
-            grid.addLayout( knob, depth, 1 )
-            knob.valueChanged.connect( partial( self.valueChanged, key, "try" ) )
-            knob.valueSet.connect( partial( self.valueSet, key, "set" ) )
+            # Add widget
+            control = ControlClass( self, t.min, t.max, t.default, t.desc )
+            grid.addLayout( control, depth, 1 )
+
+            control.valueChanged.connect( partial( self.valueChanged, key, "try" ) )
+            control.valueSet.connect( partial( self.valueSet, key, "set" ) )
 
             # fix [Tab] Order
             if( len( box_list ) > 0 ):
-                area.setTabOrder( box_list[-1], knob.box )
-            box_list.append( knob.box )
+                area.setTabOrder( box_list[-1], control.box )
+            box_list.append( control.box )
 
             depth += 1
         # Loop around, if boxes available

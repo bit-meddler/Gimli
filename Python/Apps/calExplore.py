@@ -143,6 +143,9 @@ class QMain( QtWidgets.QMainWindow ):
             view_node = Nodes.factory( Nodes.TYPE_VIEW, name=name )
             self.scene_model.addNode( view_node )
 
+        test_node = Nodes.factory( Nodes.TYPE_TESTING, name="UI Tests" )
+        self.scene_model.addNode( test_node )
+
         # Central Widget
         self.splash.showMessage( "Creating The Main Viewport" )
         self.cam_view = QGLCameraView( self )
@@ -165,8 +168,10 @@ class QMain( QtWidgets.QMainWindow ):
         self.splash.showMessage( "Editor: Attributes" )
         self.atribs = QDockingAttrs( self )
 
+        # ToDo: Yherr-Naww this should be in sync with the scene_model
         self.atribs.registerNodeType( Nodes.TYPE_CAMERA_MC_PI )
         self.atribs.registerNodeType( Nodes.TYPE_VIEW )
+        self.atribs.registerNodeType( Nodes.TYPE_TESTING )
 
         self.atribs.setModels( self.scene_model, self.selection_model )
         self.selection_model.selectionChanged.connect( self.atribs.onSelectionChanged )

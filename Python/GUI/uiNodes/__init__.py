@@ -28,11 +28,12 @@ class UINode( object ):
                 break
 
 
-from . import piCamUI, viewUI
+from . import piCamUI, viewUI, testUI
 
 NODE_LUT = {
     Nodes.TYPE_CAMERA_MC_PI : piCamUI.PiCamUINode,
     Nodes.TYPE_VIEW         : viewUI.ViewUINode,
+    Nodes.TYPE_TESTING      : testUI.TestUINode,
 }
 
 def uiNodeFactory( node_type ):
