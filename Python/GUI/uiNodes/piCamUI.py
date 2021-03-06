@@ -1,5 +1,5 @@
 from . import UINode, Nodes
-from GUI.nodeTraits import TraitInt, TRAIT_STYLE_KNOB, TRAIT_STYLE_DIAL, TRAIT_STYLE_EDIT
+from GUI.nodeTraits import *
 
 
 class PiCamUINode( UINode ):
@@ -9,7 +9,7 @@ class PiCamUINode( UINode ):
 
         # Maybe these should be in a JSON file, rather than hardcoded?
         self.traits = {
-            "fps"        : TraitInt( "fps", 60, 0, 60,
+            "fps"        : TraitInt( "fps", 60, 0, 60, TRAIT_KIND_SENDER,
                                         value=None,
                                         units="Frames per Second",
                                         units_short="fps",
@@ -18,7 +18,7 @@ class PiCamUINode( UINode ):
                                         mode="rwa",
                                         style=TRAIT_STYLE_KNOB ),
 
-            "strobe"     : TraitInt( "strobe", 20, 0, 70,
+            "strobe"     : TraitInt( "strobe", 20, 0, 70, TRAIT_KIND_SENDER,
                                         value=None,
                                         units="Watts",
                                         units_short="W",
@@ -27,7 +27,7 @@ class PiCamUINode( UINode ):
                                         mode="rw",
                                         style=TRAIT_STYLE_KNOB ),
 
-            "shutter"    : TraitInt( "shutter", 8, 2, 250,
+            "shutter"    : TraitInt( "shutter", 8, 2, 250, TRAIT_KIND_SENDER,
                                         value=None,
                                         units="100's of uSecs",
                                         units_short="100uS",
@@ -36,7 +36,7 @@ class PiCamUINode( UINode ):
                                         mode="rw",
                                         style=TRAIT_STYLE_KNOB ),
 
-            "mtu"        : TraitInt( "mtu", 0, 0, 8,
+            "mtu"        : TraitInt( "mtu", 0, 0, 8, TRAIT_KIND_SENDER,
                                          value=None,
                                          units="kilobytes above 1500",
                                          units_short="kb",
@@ -45,7 +45,7 @@ class PiCamUINode( UINode ):
                                          mode="rwa",
                                          style=TRAIT_STYLE_KNOB ),
 
-            "iscale"     : TraitInt( "iscale", 1, 1, 128,
+            "iscale"     : TraitInt( "iscale", 1, 1, 128, TRAIT_KIND_SENDER,
                                          value=None,
                                          units="Powers of 2",
                                          units_short="/2^X",
@@ -54,7 +54,7 @@ class PiCamUINode( UINode ):
                                          mode="rwa",
                                          style=TRAIT_STYLE_KNOB ),
 
-            "idelay"     : TraitInt( "idelay", 15, 3, 255,
+            "idelay"     : TraitInt( "idelay", 15, 3, 255, TRAIT_KIND_SENDER,
                                          value=None,
                                          units="Arbitrary Units",
                                          units_short="?",
@@ -63,7 +63,7 @@ class PiCamUINode( UINode ):
                                          mode="rwa",
                                          style=TRAIT_STYLE_KNOB ),
 
-            "threshold"  : TraitInt( "threshold", 128, 0, 255,
+            "threshold"  : TraitInt( "threshold", 128, 0, 255, TRAIT_KIND_SENDER,
                                          value=None,
                                          units="8-Bit Grey Level",
                                          units_short="b",
@@ -72,7 +72,7 @@ class PiCamUINode( UINode ):
                                          mode="rw",
                                          style=TRAIT_STYLE_KNOB ),
 
-            "numdets"    : TraitInt( "numdets", 13, 0, 80,
+            "numdets"    : TraitInt( "numdets", 13, 0, 80, TRAIT_KIND_SENDER,
                                          value=None,
                                          units="10s of Centroids",
                                          units_short="100x",
@@ -81,7 +81,7 @@ class PiCamUINode( UINode ):
                                          mode="rwa",
                                          style=TRAIT_STYLE_KNOB ),
 
-            "arpdelay"   : TraitInt( "arpdelay", 15, 0, 255,
+            "arpdelay"   : TraitInt( "arpdelay", 15, 0, 255, TRAIT_KIND_SENDER,
                                          value=None,
                                          units="Arbitrary Units",
                                          units_short="?",
@@ -92,7 +92,7 @@ class PiCamUINode( UINode ):
 
             # 3-axis IMU
             # ToDo: Need to represent bitfields, and probably other types
-            "impactflags": TraitInt( "impactflags", 60, 0, 60,#lambda x: '{:08b}'.format(x)
+            "impactflags": TraitInt( "impactflags", 60, 0, 60, TRAIT_KIND_SENDER,
                                          value=None,
                                          units="",
                                          units_short="Flag",
@@ -101,7 +101,7 @@ class PiCamUINode( UINode ):
                                          mode="rw",
                                          style=TRAIT_STYLE_EDIT ),
 
-            "impactlimit": TraitInt( "impactlimit", 150, 0, 255,
+            "impactlimit": TraitInt( "impactlimit", 150, 0, 255, TRAIT_KIND_SENDER,
                                          value=None,
                                          units="1/10th RMS deviation",
                                          human_name="Impact Threashold",
@@ -111,7 +111,7 @@ class PiCamUINode( UINode ):
 
 
             # ToDo: These need a NodeTraitVec3 type
-            "impactrefx" : TraitInt( "impactrefx", 0, -1023, 1023,
+            "impactrefx" : TraitInt( "impactrefx", 0, -1023, 1023, TRAIT_KIND_SENDER,
                                          value=None,
                                          units="Arbitrary Units",
                                          human_name="Impact Reference X",
@@ -119,7 +119,7 @@ class PiCamUINode( UINode ):
                                          mode="rwa",
                                          style=TRAIT_STYLE_EDIT ),
 
-            "impactrefy" : TraitInt( "impactrefy", 0, -1023, 1023,
+            "impactrefy" : TraitInt( "impactrefy", 0, -1023, 1023, TRAIT_KIND_SENDER,
                                          value=None,
                                          units="Arbitrary Units",
                                          human_name="Impact Reference Y",
@@ -127,7 +127,7 @@ class PiCamUINode( UINode ):
                                          mode="rwa",
                                          style=TRAIT_STYLE_EDIT ),
 
-            "impactrefz" : TraitInt( "impactrefz", 0, -1023, 1023,
+            "impactrefz" : TraitInt( "impactrefz", 0, -1023, 1023, TRAIT_KIND_SENDER,
                                          value=None,
                                          units="Arbitrary Units",
                                          human_name="Impact Reference Z",
@@ -135,7 +135,7 @@ class PiCamUINode( UINode ):
                                          mode="rwa",
                                          style=TRAIT_STYLE_EDIT ),
 
-            "impactvalx" : TraitInt( "impactvalx", 0, -1023, 1023,
+            "impactvalx" : TraitInt( "impactvalx", 0, -1023, 1023, TRAIT_KIND_SENDER,
                                          value=None,
                                          units="Arbitrary Units",
                                          human_name="Impact Value X",
@@ -143,7 +143,7 @@ class PiCamUINode( UINode ):
                                          mode="ra",
                                          style=TRAIT_STYLE_EDIT ),
 
-            "impactvaly" : TraitInt( "impactvaly", 0, -1023, 1023,
+            "impactvaly" : TraitInt( "impactvaly", 0, -1023, 1023, TRAIT_KIND_SENDER,
                                          value=None,
                                          units="Arbitrary Units",
                                          human_name="Impact Value Y",
@@ -151,7 +151,7 @@ class PiCamUINode( UINode ):
                                          mode="ra",
                                          style=TRAIT_STYLE_EDIT ),
 
-            "impactvalz" : TraitInt( "impactvalz", 0, -1023, 1023,
+            "impactvalz" : TraitInt( "impactvalz", 0, -1023, 1023, TRAIT_KIND_SENDER,
                                          value=None,
                                          units="Arbitrary Units",
                                          human_name="Impact Value Z",
@@ -164,7 +164,7 @@ class PiCamUINode( UINode ):
                              "impactlimit", "impactrefx", "impactrefy", "impactrefz",
                              "impactvalx", "impactvaly", "impactvalz" ]
 
-        # No idea how to deal with these ATM
+        # No idea how to deal with these ATM.  Not for display in attr edit!
         self.special_traits = {
             # Masking Zones (auto Generated)
             "maskzone01x": TraitInt( "maskzone01x", 0, 0, 4096,

@@ -165,6 +165,7 @@ class QDockingAttrs( QtWidgets.QDockWidget ):
             if( t.kind == TRAIT_KIND_NORMAL ):
                 control.valueChanged.connect( partial( self.onValueChanged, key, "try" ) )
                 control.valueSet.connect( partial( self.onValueSet, key, "set" ) )
+
             elif (t.kind == TRAIT_KIND_SENDER ):
                 control.valueChanged.connect( partial( self.txValueChanged, key, "try" ) )
                 control.valueSet.connect( partial( self.txValueSet, key, "set" ) )

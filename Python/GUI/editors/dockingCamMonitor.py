@@ -9,7 +9,7 @@ from functools import partial
 from PySide2 import QtCore, QtGui, QtWidgets, QtOpenGL
 
 from GUI import ROLE_INTERNAL_ID, ROLE_NUMROIDS, Nodes
-from GUI.widgets import QKnob
+from GUI.widgets.knobs import KnobInt
 
 class QDockingCamActivityMon( QtWidgets.QDockWidget ):
 
@@ -152,7 +152,7 @@ class QDockingCamActivityMon( QtWidgets.QDockWidget ):
         self.view.setMinimumWidth( 150 )
         self.view.setItemDelegate( self._delegate )
 
-        self.max_knob = QKnob( self, 1024, 1, 150, "High Det Warning" )
+        self.max_knob = KnobInt( self, 1, 1024, 150, "High Det Warning" )
         self.max_knob.valueChanged.connect( self.setRoidLimit )
         self.max_knob.valueSet.connect( self.setRoidLimit ) # save in global settings ???
 
