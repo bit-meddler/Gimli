@@ -6,23 +6,25 @@ widgets - simple widgets live here, more complex things get their own file
 import logging
 from PySide2 import QtCore, QtGui, QtWidgets, QtOpenGL
 
-from GUI.nodeTraits import TRAIT_TYPE_INT, TRAIT_TYPE_FLOAT, TRAIT_STYLE_EDIT, TRAIT_STYLE_KNOB, TRAIT_STYLE_DIAL
+from GUI.nodeTraits import *
 from GUI.widgets.knobs import KnobInt, KnobFloat
+from GUI.widgets.edits import EditInt, EditFloat
 
 
 TRAIT_UI_LUT = {
     TRAIT_TYPE_INT   : {
-        TRAIT_STYLE_EDIT : None,
+        TRAIT_STYLE_EDIT : EditInt,
         TRAIT_STYLE_KNOB : KnobInt,
     },
     TRAIT_TYPE_FLOAT : {
-        TRAIT_STYLE_EDIT : None,
+        TRAIT_STYLE_EDIT : EditFloat,
         TRAIT_STYLE_KNOB : KnobFloat,
     },
 }
 
 def uiTraitFactory( trait_type, style ):
     type_styles = TRAIT_UI_LUT[ trait_type ]
+    # if a style is missing, fall back
     while( style not in type_styles ):
         style -= 1
     return type_styles[ style ]

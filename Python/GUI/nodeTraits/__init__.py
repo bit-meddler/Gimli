@@ -35,6 +35,10 @@ TRAIT_STYLE_EDIT = 0
 TRAIT_STYLE_KNOB = 1
 TRAIT_STYLE_DIAL = 2
 
+# Trait Categories
+TRAIT_KIND_NORMAL = 0 # A normal trait, that needs to be recorded
+TRAIT_KIND_SENDER = 1 # Additionally a Sender emits CnC Messages to the Arbiter
+
 
 class AbstractNodeTrait( object ):
     """
@@ -48,7 +52,7 @@ class AbstractNodeTrait( object ):
 
     TYPE_INFO = TRAIT_TYPE_NONE
 
-    def __init__(self, name, default, min, max,
+    def __init__(self, name, default, min, max, kind=TRAIT_KIND_NORMAL,
                  value=None, units=None, units_short=None,
                  human_name=None, desc=None, mode=None, style=None ):
 
@@ -58,6 +62,7 @@ class AbstractNodeTrait( object ):
         self.default = default
         self.min = min
         self.max = max
+        self.kind = kind
 
         # interface sugar
         self.value = value or default
@@ -78,7 +83,7 @@ class AbstractNodeTrait( object ):
     def isShowable( self ):
         return bool( "x" in self.mode )
 
-    # Virtuals ?????????? Not sure about these
+    # Virtuals ?????????? Not sure about these, might be used in JSON parsing...
     def cast( self ):
         pass
 
@@ -108,10 +113,6 @@ class TraitFloat( AbstractNodeTrait ):
     def toString( self, native_val ):
         return str( native_val )
 
-
-TRAIT_STYLE_EDIT = 0
-TRAIT_STYLE_KNOB = 1
-TRAIT_STYLE_DIAL = 2
 
 TRAIT_LUT = {
     TRAIT_TYPE_INT   : TraitInt,

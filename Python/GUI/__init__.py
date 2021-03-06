@@ -153,7 +153,7 @@ class SceneModel( QtCore.QAbstractItemModel ):
         super( SceneModel, self ).__init__( parent )
         self.root = root or Nodes.factory( Nodes.TYPE_ROOT, "Root" )
         self.root_idx = self.createIndex( self.root.row(), 0, self.root )
-        self.expected_nodes = set( Nodes.TYPE_ROOT )
+        self.expected_nodes = { Nodes.TYPE_ROOT, } # set literal
         self.groups = {} # lut of TYPE:GroupNode
 
         # Incoming mocap frame (dets, strides, labels)

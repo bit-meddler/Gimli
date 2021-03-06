@@ -67,6 +67,7 @@ class QMain( QtWidgets.QMainWindow ):
         # Register Nodes we expect in this scene
         self.scene_model.registerNode( Nodes.TYPE_CAMERA_MC_PI )
         self.scene_model.registerNode( Nodes.TYPE_VIEW )
+        self.scene_model.registerNode( Nodes.TYPE_TESTING )
 
         # Shared Selection Model
         self.selection_model = QtCore.QItemSelectionModel( self.scene_model )
@@ -169,10 +170,6 @@ class QMain( QtWidgets.QMainWindow ):
         self.atribs = QDockingAttrs( self )
 
         # ToDo: Yherr-Naww this should be in sync with the scene_model
-        self.atribs.registerNodeType( Nodes.TYPE_CAMERA_MC_PI )
-        self.atribs.registerNodeType( Nodes.TYPE_VIEW )
-        self.atribs.registerNodeType( Nodes.TYPE_TESTING )
-
         self.atribs.setModels( self.scene_model, self.selection_model )
         self.selection_model.selectionChanged.connect( self.atribs.onSelectionChanged )
         self.addDockWidget( QtCore.Qt.LeftDockWidgetArea, self.atribs )

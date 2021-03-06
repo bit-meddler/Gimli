@@ -31,10 +31,12 @@ class UINode( object ):
 from . import piCamUI, viewUI, testUI
 
 NODE_LUT = {
+    Nodes.TYPE_ROOT         : None,
     Nodes.TYPE_CAMERA_MC_PI : piCamUI.PiCamUINode,
     Nodes.TYPE_VIEW         : viewUI.ViewUINode,
     Nodes.TYPE_TESTING      : testUI.TestUINode,
 }
 
 def uiNodeFactory( node_type ):
-    return NODE_LUT[ node_type ]()
+    print( ">>", node_type )
+    return NODE_LUT[ node_type ]

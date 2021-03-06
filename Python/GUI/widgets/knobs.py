@@ -33,7 +33,7 @@ class KSlider( QtWidgets.QSlider ):
         super( KSlider, self ).focusOutEvent( event )
 
     def mouseDoubleClickEvent( self, event ):
-        if (event.modifiers() & QtCore.Qt.ControlModifier):
+        if( event.modifiers() & QtCore.Qt.ControlModifier ):
             # Return to default, and do a "Set" like signal
             prev_state = self.blockSignals( True )
             self.setValue( self.default )
@@ -81,6 +81,14 @@ class KEdit( QtWidgets.QLineEdit ):
         self.focusNextChild()
         self.blockSignals( prev_state )
 
+    def mouseDoubleClickEvent( self, event ):
+        if( event.modifiers() & QtCore.Qt.ControlModifier ):
+            # Return to default, and do a "Set" like signal
+            prev_state = self.blockSignals( True )
+            self.setText( str( self.default ) )
+            self.blockSignals( prev_state )
+            self.editingFinished.emit()
+
 
 class KnobInt( QtWidgets.QHBoxLayout ):
     """
@@ -109,6 +117,7 @@ class KnobInt( QtWidgets.QHBoxLayout ):
         """
         super( KnobInt, self ).__init__( parent )
         self.box = KEdit( "", parent )
+        self.box.default = default
         self.slider = KSlider( parent )
         self.slider.default = default
         self.slider.setToolTip( desc )

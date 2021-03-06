@@ -18,6 +18,8 @@ from PySide2 import QtCore, QtGui, QtWidgets, QtOpenGL
 from GUI import getStdIcon, ROLE_TYPEINFO
 from GUI.uiNodes import uiNodeFactory
 from GUI.widgets import uiTraitFactory
+from GUI.nodeTraits import TRAIT_KIND_NORMAL, TRAIT_KIND_SENDER
+
 
 class QDockingAttrs( QtWidgets.QDockWidget ):
 
@@ -100,7 +102,11 @@ class QDockingAttrs( QtWidgets.QDockWidget ):
         Args:
             node_type: (str) Type Info for the Node we are registering
         """
-        ui_data = uiNodeFactory( node_type )
+        ui_func = uiNodeFactory( node_type )
+        if( ui_func is None ):
+            return
+
+        ui_data = ui_func()
         temp = self._makePanel( ui_data, False )
         self._forms[ node_type ] = temp
         self.stack.addWidget( temp )
@@ -155,8 +161,13 @@ class QDockingAttrs( QtWidgets.QDockWidget ):
             control = ControlClass( self, t.min, t.max, t.default, t.desc )
             grid.addLayout( control, depth, 1 )
 
-            control.valueChanged.connect( partial( self.valueChanged, key, "try" ) )
-            control.valueSet.connect( partial( self.valueSet, key, "set" ) )
+            # Setup value changing callbacks
+            if( t.kind == TRAIT_KIND_NORMAL ):
+                control.valueChanged.connect( partial( self.onValueChanged, key, "try" ) )
+                control.valueSet.connect( partial( self.onValueSet, key, "set" ) )
+            elif (t.kind == TRAIT_KIND_SENDER ):
+                control.valueChanged.connect( partial( self.txValueChanged, key, "try" ) )
+                control.valueSet.connect( partial( self.txValueSet, key, "set" ) )
 
             # fix [Tab] Order
             if( len( box_list ) > 0 ):
@@ -169,10 +180,11 @@ class QDockingAttrs( QtWidgets.QDockWidget ):
         #     area.setTabOrder( box_list[-1], box_list[0] )
 
         # Complete
+        grid.setRowStretch( depth, 1 )
         area.setLayout( grid )
         return scroll
 
-    def valueChanged( self, key, action, value ):
+    def onValueChanged( self, key, action, value ):
         """
         Slot called when one of the field editors make a change.
         Args:
@@ -185,20 +197,37 @@ class QDockingAttrs( QtWidgets.QDockWidget ):
         """
         # This info needs to work it's way back up to the app and MVC for the data
         print( key, action, value )
-        app = self.parent()
-        # ToDo: We shouldn't be calling sendCNC here.  Setting this attr should trigger it, if the atter belongs to a camera
-        app.sendCNC( action, key, value )
 
-    def valueSet( self, key, action, value ):
+
+    def onValueSet( self, key, action, value ):
         """ as above """
         print( key, action, value )
+
+    # ------------------------------------------------------------------------------------------------------------------
+    # This is a bit of a hack.  I've a feeling the CnC and triggered read-backs
+    # all need to be managed in a different place, possibly the model.
+    # ToDo: Fix this shit
+    def txValueChanged( self, key, action, value ):
         app = self.parent()
         app.sendCNC( action, key, value )
 
+    def txValueSet( self, key, action, value ):
+        # This should also trigger a readback to be sure the remote device has
+        # accepted the change
+        app = self.parent()
+        app.sendCNC( action, key, value )
+
+    # ------------------------------------------------------------------------------------------------------------------
     def setModels( self, item_model, selection_model ):
-        """ Attach the data and selection models """
+        """
+            Attach the data and selection models.
+            Register any nodes the model is aware of
+        """
         self._model = item_model
-        #self._model.dataChanged.connect( self.onDataChange )
+
+        for node in self._model.expected_nodes:
+            self.registerNodeType( node )
+
         self._select = selection_model
 
     def onDataChange( self, change_idx ):

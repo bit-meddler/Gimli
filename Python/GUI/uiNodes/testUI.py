@@ -8,8 +8,10 @@ class TestUINode( UINode ):
         self.type_info = Nodes.TYPE_TESTING
 
         self.traits = {
-            "Int Knob"       : TraitInt( "Int Knob", 60, 0, 60, style=TRAIT_STYLE_KNOB ),
-            "Float Knob"     : TraitFloat( "Float Knob", 0., 0., 1., style=TRAIT_STYLE_KNOB ),
+            "Int Edit"    : TraitInt( "Int Edit", 30, -60, 120, style=TRAIT_STYLE_EDIT ),
+            "Float Edit"  : TraitFloat( "Float Edit", 0., 0., 100., style=TRAIT_STYLE_EDIT ),
+            "Int Knob"    : TraitInt( "Int Knob", 30, 0, 60, style=TRAIT_STYLE_KNOB ),
+            "Float Knob"  : TraitFloat( "Float Knob", 0., 0., 1., style=TRAIT_STYLE_KNOB ),
 
         }
         self.trait_order = list( self.traits.keys() )
