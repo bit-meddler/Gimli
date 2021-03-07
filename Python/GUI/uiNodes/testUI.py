@@ -8,6 +8,8 @@ class TestUINode( UINode ):
         self.type_info = Nodes.TYPE_TESTING
 
         self.traits = {
+            "Bit Box"     : TraitBool( "Boolen Bit Box", False, style=TRAIT_STYLE_EDIT ),
+            "Text Box"    : TraitStr( "Text Edit", "Spam & Eggs", style=TRAIT_STYLE_EDIT ),
             "Int Edit"    : TraitInt( "Int Edit", 30, -60, 120, style=TRAIT_STYLE_EDIT ),
             "Float Edit"  : TraitFloat( "Float Edit", 0., 0., 100., style=TRAIT_STYLE_EDIT ),
             "List Box"    : TraitList( "List Box", "29.97", ["23.976", "24", "25", "29.97", "30"],

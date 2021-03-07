@@ -11,7 +11,7 @@ from PySide2 import QtCore, QtGui, QtWidgets, QtOpenGL
 
 from GUI.nodeTraits import *
 from GUI.widgets.knobs import KnobInt, KnobFloat
-from GUI.widgets.edits import EditInt, EditFloat, EditCombo
+from GUI.widgets.edits import EditInt, EditFloat, EditCombo, EditBool, EditStr
 
 
 TRAIT_UI_LUT = {
@@ -25,11 +25,18 @@ TRAIT_UI_LUT = {
     },
     TRAIT_TYPE_LIST : {
         TRAIT_STYLE_EDIT : EditCombo,
-    }
+    },
+    TRAIT_TYPE_BOOL : {
+        TRAIT_STYLE_EDIT : EditBool,
+    },
+    TRAIT_TYPE_STR : {
+        TRAIT_STYLE_EDIT : EditStr,
+    },
 }
 
-CONTINUOUS_TRATES  = ( TRAIT_TYPE_INT, TRAIT_TYPE_FLOAT, )
-DISCRETE_TRAITS = ( TRAIT_TYPE_LIST, )
+CONTINUOUS_TRATES = ( TRAIT_TYPE_INT, TRAIT_TYPE_FLOAT, )
+DISCRETE_TRAITS   = ( TRAIT_TYPE_LIST, )
+SINGULAR_TRAITS   = ( TRAIT_TYPE_BOOL, TRAIT_TYPE_STR, )
 
 
 def uiTraitFactory( owner, trait ):
@@ -47,6 +54,9 @@ def uiTraitFactory( owner, trait ):
 
     elif( trait.TYPE_INFO in DISCRETE_TRAITS ):
         control = ControlClass( owner, trait.options, trait.default, trait.desc )
+
+    elif( trait.TYPE_INFO in SINGULAR_TRAITS ):
+        control = ControlClass( owner, trait.default, trait.desc )
 
     return control
 

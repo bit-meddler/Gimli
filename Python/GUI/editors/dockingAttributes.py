@@ -128,6 +128,10 @@ class QDockingAttrs( QtWidgets.QDockWidget ):
 
         Returns:
             scroll: (QScrollArea)
+
+        ToDo; Register keynames against their controls
+        ToDo: Allow 'silent set' updating of displays when the data changes or
+              different stuff gets selected
         """
         # make a scroll area containing the grid
         scroll = QtWidgets.QScrollArea( self )

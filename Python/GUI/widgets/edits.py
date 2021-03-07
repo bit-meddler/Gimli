@@ -395,3 +395,80 @@ class EditCombo( QtWidgets.QHBoxLayout ):
                 return True
 
         return False
+
+
+class EditBool( QtWidgets.QHBoxLayout ):
+
+    valueChanged = QtCore.Signal( bool ) # Will never send, but signature must match
+    valueSet     = QtCore.Signal( bool )
+
+    def __init__( self, parent, default, desc ):
+        super( EditBool, self ).__init__( parent )
+
+        self.default = default
+
+        self.box = QtWidgets.QCheckBox( parent )
+        self.box.setToolTip( desc )
+        self.box.setChecked( self.default )
+
+        self.box.installEventFilter( self )
+        self.box.stateChanged.connect( self.onToggle )
+        self.addWidget( self.box, 1 )
+
+    def onToggle( self ):
+        self.valueSet.emit( self.box.isChecked() )
+
+    def eventFilter( self, widget, event ):
+        # Advance focus on "Enter" key press
+        event_t = event.type()
+        if( event_t == QtCore.QEvent.KeyPress ):
+            key = event.key()
+            if( key == QtCore.Qt.Key_Return ):
+                prev_state = widget.blockSignals( True )
+                widget.focusNextChild()
+                widget.blockSignals( prev_state )
+                return True
+
+        if( event_t == QtCore.QEvent.MouseButtonDblClick ):
+            if( event.modifiers() & QtCore.Qt.ControlModifier ):
+                # Return to default
+                self.box.setChecked( self.default )
+                return True
+
+        return False
+
+class EditStr( QtWidgets.QHBoxLayout ):
+
+    valueChanged = QtCore.Signal( str ) # Will never send, but signature must match
+    valueSet     = QtCore.Signal( str )
+
+    def __init__( self, parent, default, desc ):
+        super( EditStr, self ).__init__( parent )
+
+        self.default = default
+
+        self.box = QtWidgets.QLineEdit( parent )
+        self.box.setToolTip( desc )
+        self.box.setText( self.default )
+
+        self.box.installEventFilter( self )
+        self.box.editingFinished.connect( self._boxSet )
+        self.addWidget( self.box, 1 )
+
+    def _boxSet( self ):
+        self.valueSet.emit( str( self.box.text() ) )
+        prev_state = self.box.blockSignals( True )
+        self.box.focusNextChild()
+        self.box.blockSignals( prev_state )
+
+    def eventFilter( self, widget, event ):
+        # Advance focus on "Enter" key press
+        event_t = event.type()
+
+        if( event_t == QtCore.QEvent.MouseButtonDblClick ):
+            if( event.modifiers() & QtCore.Qt.ControlModifier ):
+                # Return to default
+                self.box.setChecked( self.default )
+                return True
+
+        return False

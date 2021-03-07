@@ -6,20 +6,20 @@
 
     There will be Implementations of the following types of trait:
         0D:
-            boolean
-            enum
-            int
-            float
-            String
-            timecode
+            x boolean
+            x enum/list
+            x int
+            x float
+            x String
+              timecode
         1D:
-            bitfield
-            vec3i
-            vec3f
-            colour
-            stringlist
+              bitfield
+              vec3i ?
+              vec3f
+              colour
+              enum/list - multi select
         nD:
-            matrix
+              matrix
 
     And this should be mirrored in GUI.widgets to provide interfaces to control
     the trait.  For any new Type, Implement at least TRAIT_STYLE_EDIT.
@@ -30,6 +30,8 @@ TRAIT_TYPE_NONE  = "TRAIT_NONE"
 TRAIT_TYPE_INT   = "TRAIT_INT"
 TRAIT_TYPE_FLOAT = "TRAIT_FLOAT"
 TRAIT_TYPE_LIST  = "TRAIT_LIST"
+TRAIT_TYPE_BOOL  = "TRAIT_BOOL"
+TRAIT_TYPE_STR   = "TRAIT_STR"
 
 # Interface Styles
 TRAIT_STYLE_EDIT = 0
@@ -131,10 +133,43 @@ class TraitList( AbstractNodeTrait ):
         return bool( candidate in self.options )
 
 
+class TraitBool( AbstractNodeTrait ):
+    TYPE_INFO = TRAIT_TYPE_BOOL
+
+    def __init__(self, name, default, kind=TRAIT_KIND_NORMAL,
+                 value=None, units=None, units_short=None,
+                 human_name=None, desc=None, mode=None, style=None ):
+
+        super( TraitBool, self ).__init__( name, default, None, None, kind,
+                                           value, units, units_short,
+                                           human_name, desc, mode, style )
+
+    def isValid( self, candidate ):
+        return bool( candidate in self.options )
+
+
+class TraitStr( AbstractNodeTrait ):
+    TYPE_INFO = TRAIT_TYPE_STR
+
+    def __init__(self, name, default, kind=TRAIT_KIND_NORMAL,
+                 value=None, units=None, units_short=None,
+                 human_name=None, desc=None, mode=None, style=None ):
+
+        super( TraitStr, self ).__init__( name, default, None, None, kind,
+                                          value, units, units_short,
+                                          human_name, desc, mode, style )
+
+    def isValid( self, candidate ):
+        # Pluggable validation?
+        return True
+
+
 TRAIT_LUT = {
     TRAIT_TYPE_INT   : TraitInt,
     TRAIT_TYPE_FLOAT : TraitFloat,
     TRAIT_TYPE_LIST  : TraitList,
+    TRAIT_TYPE_BOOL  : TraitBool,
+    TRAIT_TYPE_STR   : TraitStr,
 }
 
 def factory( type_info ):
