@@ -234,6 +234,7 @@ class DragBoxFloat( QtWidgets.QDoubleSpinBox ):
             self.blockSignals( prev_state )
             self.editingFinished.emit()
 
+
 class SMathValidator( QtGui.QValidator ):
     """
         Accept Scientific notation in the lineEdit.
@@ -335,3 +336,62 @@ class EditFloat( QtWidgets.QHBoxLayout ):
 
     def _set( self ):
         self.valueSet.emit( self.box.value() )
+
+
+class EditCombo( QtWidgets.QHBoxLayout ):
+
+    valueChanged = QtCore.Signal( str ) # Will never send, but signature must match
+    valueSet     = QtCore.Signal( str )
+
+    def __init__( self, parent, items, default, desc ):
+        super( EditCombo, self ).__init__( parent )
+
+        self.default = default
+        self._items = items
+
+        self.box = QtWidgets.QComboBox( parent )
+        self.box.setToolTip( desc )
+
+        self._default_idx = 0
+        for idx, key in enumerate( items ): # works with listlike or dict
+            self.box.addItem( key )
+            if( key == self.default ):
+                self._default_idx = idx
+
+        # select the default
+        self.box.setCurrentIndex( self._default_idx )
+
+        # Wheel focus & return to next element
+        self.box.setFocusPolicy( QtCore.Qt.StrongFocus )
+        self.box.installEventFilter( self )
+
+        self.addWidget( self.box, 1 )
+        self.box.currentIndexChanged.connect( self._set )
+
+    def _set( self, _index ):
+        self.valueSet.emit( self.box.currentText() )
+
+    def resolve( self, key ):
+        if( type( self._items ) == dict ):
+            return self._items[ key ]
+        else:
+            return key
+
+    def eventFilter( self, widget, event ):
+        # Advance focus on "Enter" key press
+        event_t = event.type()
+        if( event_t == QtCore.QEvent.KeyPress ):
+            key = event.key()
+            if( key == QtCore.Qt.Key_Return ):
+                prev_state = widget.blockSignals( True )
+                widget.focusNextChild()
+                widget.blockSignals( prev_state )
+                return True
+
+        if( event_t == QtCore.QEvent.MouseButtonDblClick ):
+            if( event.modifiers() & QtCore.Qt.ControlModifier ):
+                # Return to default
+                self.box.setCurrentIndex( self._default_idx )
+                return True
+
+        return False

@@ -1,5 +1,8 @@
 """
-widgets - simple widgets live here, more complex things get their own file
+widgets - simple widgets live here, more complex things get their own file.
+
+For self configuring components (edits, knobs, dials) the actual functional bit
+must be named "box", for [Tab] skip ordering at a higher level.
 
 """
 
@@ -8,7 +11,7 @@ from PySide2 import QtCore, QtGui, QtWidgets, QtOpenGL
 
 from GUI.nodeTraits import *
 from GUI.widgets.knobs import KnobInt, KnobFloat
-from GUI.widgets.edits import EditInt, EditFloat
+from GUI.widgets.edits import EditInt, EditFloat, EditCombo
 
 
 TRAIT_UI_LUT = {
@@ -20,14 +23,32 @@ TRAIT_UI_LUT = {
         TRAIT_STYLE_EDIT : EditFloat,
         TRAIT_STYLE_KNOB : KnobFloat,
     },
+    TRAIT_TYPE_LIST : {
+        TRAIT_STYLE_EDIT : EditCombo,
+    }
 }
 
-def uiTraitFactory( trait_type, style ):
-    type_styles = TRAIT_UI_LUT[ trait_type ]
+CONTINUOUS_TRATES  = ( TRAIT_TYPE_INT, TRAIT_TYPE_FLOAT, )
+DISCRETE_TRAITS = ( TRAIT_TYPE_LIST, )
+
+
+def uiTraitFactory( owner, trait ):
+    type_styles = TRAIT_UI_LUT[ trait.TYPE_INFO ]
     # if a style is missing, fall back
+    style = trait.style
     while( style not in type_styles ):
         style -= 1
-    return type_styles[ style ]
+    ControlClass = type_styles[ style ]
+
+    # correctly instantiate
+    control = None
+    if( trait.TYPE_INFO in CONTINUOUS_TRATES ):
+        control = ControlClass( owner, trait.min, trait.max, trait.default, trait.desc )
+
+    elif( trait.TYPE_INFO in DISCRETE_TRAITS ):
+        control = ControlClass( owner, trait.options, trait.default, trait.desc )
+
+    return control
 
 
 # ----------------------------------------------------------------------------------------------------------------------

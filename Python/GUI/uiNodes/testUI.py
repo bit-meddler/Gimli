@@ -10,6 +10,8 @@ class TestUINode( UINode ):
         self.traits = {
             "Int Edit"    : TraitInt( "Int Edit", 30, -60, 120, style=TRAIT_STYLE_EDIT ),
             "Float Edit"  : TraitFloat( "Float Edit", 0., 0., 100., style=TRAIT_STYLE_EDIT ),
+            "List Box"    : TraitList( "List Box", "29.97", ["23.976", "24", "25", "29.97", "30"],
+                                       style=TRAIT_STYLE_EDIT, desc="Framerate" ),
             "Int Knob"    : TraitInt( "Int Knob", 30, 0, 60, style=TRAIT_STYLE_KNOB ),
             "Float Knob"  : TraitFloat( "Float Knob", 0., 0., 1., style=TRAIT_STYLE_KNOB ),
 

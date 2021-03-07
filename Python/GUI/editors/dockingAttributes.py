@@ -140,33 +140,31 @@ class QDockingAttrs( QtWidgets.QDockWidget ):
         box_list = []
         depth = 0
         for key in ui_node.trait_order:
-            t = ui_node.traits[ key ]
+            trait = ui_node.traits[ key ]
 
-            if( t.isAdvanced() and not do_advanced ):
-                #print( "skipping", key )
+            if( trait.isAdvanced() and not do_advanced ):
                 continue
 
             # Get the appropriate Knob, Dial, or Edit
-            ControlClass = uiTraitFactory( t.TYPE_INFO, t.style )
-            if( ControlClass is None ):
-                print( "No Control for '{}' with style '{}'".format( t.name, t.style ) )
+            control = uiTraitFactory( self, trait )
+            if( control is None ):
+                print( "No Control for '{}' with style '{}'".format( trait.name, trait.style ) )
                 continue
 
             # Add Label
-            lab = QtWidgets.QLabel( t.name )
+            lab = QtWidgets.QLabel( trait.name )
             lab.setToolTip( key )
             grid.addWidget( lab, depth, 0 )
 
             # Add widget
-            control = ControlClass( self, t.min, t.max, t.default, t.desc )
             grid.addLayout( control, depth, 1 )
 
             # Setup value changing callbacks
-            if( t.kind == TRAIT_KIND_NORMAL ):
+            if( trait.kind == TRAIT_KIND_NORMAL ):
                 control.valueChanged.connect( partial( self.onValueChanged, key, "try" ) )
                 control.valueSet.connect( partial( self.onValueSet, key, "set" ) )
 
-            elif (t.kind == TRAIT_KIND_SENDER ):
+            elif( trait.kind == TRAIT_KIND_SENDER ):
                 control.valueChanged.connect( partial( self.txValueChanged, key, "try" ) )
                 control.valueSet.connect( partial( self.txValueSet, key, "set" ) )
 

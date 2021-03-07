@@ -29,6 +29,7 @@
 TRAIT_TYPE_NONE  = "TRAIT_NONE"
 TRAIT_TYPE_INT   = "TRAIT_INT"
 TRAIT_TYPE_FLOAT = "TRAIT_FLOAT"
+TRAIT_TYPE_LIST  = "TRAIT_LIST"
 
 # Interface Styles
 TRAIT_STYLE_EDIT = 0
@@ -114,9 +115,26 @@ class TraitFloat( AbstractNodeTrait ):
         return str( native_val )
 
 
+class TraitList( AbstractNodeTrait ):
+    TYPE_INFO = TRAIT_TYPE_LIST
+
+    def __init__(self, name, default, options, kind=TRAIT_KIND_NORMAL,
+                 value=None, units=None, units_short=None,
+                 human_name=None, desc=None, mode=None, style=None ):
+
+        super( TraitList, self ).__init__( name, default, None, None, kind,
+                                           value, units, units_short,
+                                           human_name, desc, mode, style )
+        self.options = options
+
+    def isValid( self, candidate ):
+        return bool( candidate in self.options )
+
+
 TRAIT_LUT = {
     TRAIT_TYPE_INT   : TraitInt,
     TRAIT_TYPE_FLOAT : TraitFloat,
+    TRAIT_TYPE_LIST  : TraitList,
 }
 
 def factory( type_info ):
