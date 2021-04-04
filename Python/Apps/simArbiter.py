@@ -35,7 +35,7 @@ import time
 import zmq
 
 import Comms
-#from Comms.piComunicate import AssembleDetFrame, SimpleComms
+from Core.math3D import FLOAT_T, ID_T
 
 class Metronome( threading.Thread ):
     """ This looks familiar! """
@@ -110,8 +110,9 @@ class Arbiter( object ):
         self.ticks = 0
         self.cur_frame = 0
         self.frames = []
-        self.splits = []
+        self.strides = []
         self.num_frames = 0
+        self.sent_frames = 0
         self._setupReplay()
 
         # a clock thread to tick the data replay
@@ -132,16 +133,16 @@ class Arbiter( object ):
         # repack each frame
         self.num_frames = len( frames )
         empties = 0
-        for (split, frame, ids) in frames:
+        for (stride, frame, ids) in frames:
             # I'll have that as NumPy, thanks
-            np_frame = np.array( frame, dtype=np.float32 )
-            np_split = np.array( split, dtype=np.int )
-            if( len(np_frame) == 0 ):
+            np_frames = np.array( frame, dtype=FLOAT_T )
+            np_stride = np.array( stride, dtype=ID_T )
+            if( len(np_frames) == 0 ):
                 empties += 1
-            self.frames.append( np_frame )
-            self.splits.append( np_split )
+            self.frames.append( np_frames )
+            self.strides.append( np_stride )
             
-        print( "{} Empty frames".format( empties ) )
+        print( "Prepared {} frames, containing {} Empty frames".format( self.num_frames, empties ) )
 
     def handleCNC( self, dgm ):
         # currently just cameras
@@ -184,7 +185,7 @@ class Arbiter( object ):
                 if( coms.get( self.cnc_in ) == zmq.POLLIN ):
                     dgm = self.cnc_in.recv_multipart()
                     # Should we could test the validity of the request?
-                    # Acnowlage recipt, and give a "Message Number"
+                    # Acknowledge receipt, and give a "Message Number"
                     self.acks += 1
                     ack = struct.pack( "I", self.acks )
                     self.cnc_in.send_multipart( [ dgm[ 0 ], b'', ack ] )
@@ -195,7 +196,7 @@ class Arbiter( object ):
 
                 # Send some data
                 if( self.tick.isSet() ):
-                    data = [ self.cur_frame, self.splits[self.cur_frame], self.frames[self.cur_frame] ]
+                    data = [ self.cur_frame, self.strides[self.cur_frame], self.frames[self.cur_frame] ]
                     self.publishDets( data ) # Make this a callback in the det man?
                     self.ticks += 1
                     self.cur_frame += (self.step + 1)
@@ -211,10 +212,12 @@ class Arbiter( object ):
                     self.data_pub.send_multipart( [ Comms.ABT_TOPIC_STATE_B, b"", msg ] )
 
             except KeyboardInterrupt:
+                print( "Closing due to Interupt" )
                 self.running.clear()
 
         # while running
         self.cleanClose()
+        print( "Sent {} frames".format( self.sent_frames ) )
 
     def publishDets( self, data ):
         _, strides, dets = data
@@ -223,6 +226,7 @@ class Arbiter( object ):
                                         strides.tobytes(),
                                         dets.tobytes() ] )
         #log.info( "sent dets" )
+        self.sent_frames += 1
 
     def cleanClose( self ):
         print( self.system )
