@@ -226,6 +226,15 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
 
     def __init__(self, parent=None ):
         super(QGLCameraPane, self).__init__( parent )
+
+        # Setup the Canvas / Format
+        format = QtGui.QSurfaceFormat.defaultFormat()
+        format.setSamples( 4 )
+        format.setRenderableType( QtGui.QSurfaceFormat.OpenGL )
+        format.setProfile( QtGui.QSurfaceFormat.CoreProfile )
+
+        self.setFormat( format )
+
         # canvas size
         self._wh = (self.geometry().width(), self.geometry().height())
         self._rc = (-1, -1) # ros and cols of cameras to display
@@ -471,9 +480,8 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
                 # Draw reticule
                 GL.glDrawArrays( GL.GL_LINES, 0, self._reticule_sz )
 
-
-                # Kills redrawws?
-                overlays.append( ( text_x + x, text_y - y, "Camera {}".format( cam_idx+1 ) ) )
+                # Queue HUD text
+                overlays.append( ( text_x + x, text_y - y, "Camera {}".format( self.cam_list[ cam_idx ]  ) ) )
 
                 # Done?
                 cam_idx += 1
@@ -482,8 +490,7 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
 
         self.shader.release()
 
-        # Draw overlay text
-        # # Enable a painter, but switch to Native Painting immediatly
+        # Draw overlay text - Seems to kill the 3D renders?
         # painter = QtGui.QPainter( self )
         # painter.setPen( QtCore.Qt.green )
         # painter.setFont( QtGui.QFont( "Helvetica", 8 ) )

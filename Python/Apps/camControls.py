@@ -144,7 +144,8 @@ class QMain( QtWidgets.QMainWindow ):
 
         # Splash Screen & Test Card
         self.test_card = QtGui.QPixmap( os.path.join( RES_PATH, "cardK.png" ) )
-        self.splash = QtWidgets.QSplashScreen( self, pixmap=self.test_card )
+        self.splash = QtWidgets.QSplashScreen()
+        self.splash.setPixmap( self.test_card )
         self.splash.move( screen.availableGeometry().center() - self.splash.rect().center() )
         self.splash.show()
 
