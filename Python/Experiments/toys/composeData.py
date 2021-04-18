@@ -24,12 +24,12 @@ def packFrames( target ):
     pixel_scale = 2.0 / 1024.0
     for i in range( num_frames ):
         dets = []
-        split = [0]
+        stride = [0]
         for j in range( 10 ):
             rad = np.random.uniform( 0.455, 7.5, 1 )[0]
             cam_frame = [ [x, y, rad] for x, y in cams[j][i] ] # add a radius col
             dets.extend( cam_frame )
-            split.append( split[-1] + len(cam_frame) )
+            stride.append( stride[-1] + len(cam_frame) )
 
         # I'll have that as NumPy, thanks
         np_frame = np.asarray( dets, dtype=np.float32 )
@@ -41,7 +41,7 @@ def packFrames( target ):
         except:
             empties += 1
 
-        frames.append( ( split, np_frame.tolist(), np.zeros((np_frame.shape[0],),dtype=np.int).tolist() ) )
+        frames.append( ( stride, np_frame.tolist(), np.zeros((np_frame.shape[0],),dtype=np.int).tolist() ) )
 
     print( "{} Empty frames".format( empties ) )
     return frames
