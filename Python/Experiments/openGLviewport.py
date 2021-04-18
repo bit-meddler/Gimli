@@ -13,7 +13,7 @@ from Core.math3D import *
 import cv2
 
 from PySide2 import QtCore, QtGui, QtWidgets
-
+from shiboken2 import VoidPtr
 from OpenGL import GL
 
 
@@ -49,6 +49,8 @@ class Shaders( object ):
 
         }
     """
+
+    program_attrs = ( "a_position", "a_colour", "a_uvCoord" )
  
     frg_src = """
         # version 330
@@ -66,12 +68,17 @@ class Shaders( object ):
     """
 
 
-class GLVP( QtWidgets.QOpenGLWidget ):
+class GLVP( QtWidgets.QOpenGLWidget, QtGui.QOpenGLFunctions ):
 
     def __init__( self, parent=None ):
-        super( GLVP, self ).__init__( parent )
+        # Odd Super call required with multi inheritance
+        QtWidgets.QOpenGLWidget.__init__( self, parent )
+        QtGui.QOpenGLFunctions.__init__( self )
+
+        # OpenGL setup
         self.bgcolor = [ 0.0, 0.1, 0.1, 1.0 ]
         self.shader_attr_locs = {}
+        #self.shader = QtGui.QOpenGLShaderProgram( self.context() )
 
         # canvas size
         self.wh = ( self.geometry().width(), self.geometry().height() )
@@ -114,6 +121,7 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         ]
         cube = np.array( cube, dtype=np.float32 )
 
+        # ( element count, offset to first element in bytes )
         self.stride_data = [ [3, 0], [3, 3*cube.itemsize], [2, 6*cube.itemsize] ]
         self.line_sz = 8 * cube.itemsize
  
@@ -158,30 +166,31 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         GL.glTexParameteri( GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR )
 
 
-    def _qglShader( self ):
+    def _configureShaders( self ):
 
         self.shader = QtGui.QOpenGLShaderProgram( self.context() )
 
         self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, Shaders.vtx_src  )
         self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Fragment, Shaders.frg_src )
 
-        program_attrs = ( "a_position", "a_colour", "a_uvCoord" )
-
-        for i, name in enumerate( program_attrs ):
+        for i, name in enumerate( Shaders.program_attrs ):
             self.shader_attr_locs[ name ] = i
-            GL.glBindAttribLocation( self.shader.programId(), self.shader_attr_locs[ name ], name )
+            self.shader.bindAttributeLocation( name, i )
 
         self.shader.link()
         self.shader.bind()
 
-        for name, (num, offset) in zip( program_attrs, self.stride_data ):
-            GL.glEnableVertexAttribArray( self.shader_attr_locs[ name ] )
-            GL.glVertexAttribPointer( self.shader_attr_locs[ name ],
+    def _configureVertexAttribs( self ):
+        f = QtGui.QOpenGLContext.currentContext().functions()
+        for name, (num, offset) in zip( Shaders.program_attrs, self.stride_data ):
+            ptr = VoidPtr( offset )
+            f.glEnableVertexAttribArray( self.shader_attr_locs[ name ] )
+            f.glVertexAttribPointer( self.shader_attr_locs[ name ],
                                       num,
                                       GL.GL_FLOAT,
                                       GL.GL_FALSE,
                                       self.line_sz,
-                                      ctypes.c_void_p( offset ) )
+                                      ptr )
 
         self.rot_loc = self.shader.uniformLocation( "u_rotation" )
 
@@ -196,15 +205,20 @@ class GLVP( QtWidgets.QOpenGLWidget ):
 
     # gl funs --------------------------------------------------------
     def initializeGL( self ):
-        GL.glEnable( GL.GL_TEXTURE_2D )
+        # shaders
+        self._configureShaders()
+
         # buffers
         self._prepareResources()
-        # shaders
-        self._qglShader()
+
+        # Attrs
+        self._configureVertexAttribs()
+
         # misc
-        GL.glHint( GL.GL_POINT_SMOOTH_HINT, GL.GL_NICEST )
-        GL.glEnable( GL.GL_POINT_SMOOTH )
-        GL.glEnable( GL.GL_DEPTH_TEST )
+        #self.glEnable( GL.GL_TEXTURE_2D )
+        #GL.glHint( GL.GL_POINT_SMOOTH_HINT, GL.GL_NICEST )
+        #GL.glEnable( GL.GL_POINT_SMOOTH )
+        #GL.glEnable( GL.GL_DEPTH_TEST )
         #GL.glEnable( GL.GL_CULL_FACE )
 
         GL.glEnable( GL.GL_BLEND )
@@ -221,23 +235,30 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         if( self.rot_loc is None ):
             return
 
-        GL.glClear( GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT )
+        self.shader.bind()
 
-        GL.glViewport( 0, 0, self.wh[0], self.wh[1] )
 
-        rot_x = genRotMat( "X", self.rot, degrees=True )
-        #rot_y = genRotMat( "Y", self.rot+90, degrees=True )
-        stat_y= genRotMat( "Y", 17.5, degrees=True )
+        # Drawing Settings
+        #self.glHint( GL.GL_POINT_SMOOTH_HINT, GL.GL_NICEST )
+        #self.glClear( GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT )
+        #self.glEnable( GL.GL_POINT_SMOOTH )
+        #self.glEnable( GL.GL_DEPTH_TEST )
 
-        GL.glUniformMatrix4fv( self.rot_loc, 1, GL.GL_TRUE, np.dot( stat_y, rot_x ) )
+        rotation = QtGui.QMatrix4x4()
+        rotation.rotate( self.rot, 1.0, 0.0, 0.0 )
+        rotation.rotate( 17.5, 0.0, 1.0, 0.0 )
 
-        GL.glDrawElements( GL.GL_TRIANGLES, self.num_idx, GL.GL_UNSIGNED_SHORT, ctypes.c_void_p( 0 ) )
+        self.shader.setUniformValue( self.rot_loc, rotation )
+
+        self.glDrawElements( GL.GL_TRIANGLES, self.num_idx, GL.GL_UNSIGNED_SHORT, 0 )
+
+        self.shader.release()
 
         self.rot += 1.0
 
     def resizeGL( self, width, height ):
         self.wh = ( width, height )
-        GL.glViewport( 0, 0, width, height )
+        #GL.glViewport( 0, 0, width, height )
     
     
 if( __name__ == "__main__" ):
