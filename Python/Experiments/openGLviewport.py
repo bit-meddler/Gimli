@@ -2,6 +2,14 @@ import ctypes
 import sys
 import numpy as np
 
+# Workaround not being in PATH
+import os, sys
+_git_root_ = os.path.dirname( os.path.dirname( os.path.dirname( os.path.realpath(__file__) ) ) )
+CODE_PATH = os.path.join( _git_root_, "midget", "Python" )
+sys.path.append( CODE_PATH )
+
+from Core.math3D import *
+
 import cv2
 
 from PySide2 import QtCore, QtGui, QtWidgets
@@ -13,7 +21,7 @@ class OGLWindow( QtWidgets.QWidget ):
 
     def __init__( self, parent=None ):
         super( OGLWindow, self ).__init__( parent )
-        self.glWidget = GLWidget()
+        self.glWidget = GLVP()
 
         mainLayout = QtWidgets.QHBoxLayout()  
         mainLayout.addWidget( self.glWidget )
@@ -58,39 +66,11 @@ class Shaders( object ):
     """
 
 
-class Math3D( object ):
-
-    @staticmethod
-    def genRotMat( axis, angle, degrees=False ):
-        angle = np.deg2rad( angle ) if degrees else angle
-        axis = axis.upper()
-        ret = np.eye(4)
-
-        ca = np.cos( angle )
-        sa = np.sin( angle )
-
-        if( axis == "X" ):
-            mat = [ [  1.0, 0.0, 0.0 ],
-                    [  0.0,  ca, -sa ],
-                    [  0.0,  sa,  ca ] ]
-        elif( axis == "Y" ):
-            mat = [ [  ca,  0.0,  sa ],
-                    [ 0.0,  1.0, 0.0 ],
-                    [ -sa,  0.0,  ca ] ]
-        elif( axis == "Z" ):
-            mat = [ [  ca, -sa, 0.0 ],
-                    [  sa,  ca, 0.0 ],
-                    [ 0.0, 0.0, 1.0 ] ]
-
-        ret[:3,:3] = np.asarray( mat, dtype=np.float32 )
-
-        return ret
-
-class GLWidget( QtWidgets.QOpenGLWidget ):
+class GLVP( QtWidgets.QOpenGLWidget ):
 
     def __init__( self, parent=None ):
-        super( GLWidget, self ).__init__( parent )
-        self.bgcolor = [ 0, 0.1, 0.1, 1 ]
+        super( GLVP, self ).__init__( parent )
+        self.bgcolor = [ 0.0, 0.1, 0.1, 1.0 ]
         self.shader_attr_locs = {}
 
         # canvas size
@@ -239,15 +219,15 @@ class GLWidget( QtWidgets.QOpenGLWidget ):
     def paintGL( self ):
         # guard against early drawing
         if( self.rot_loc is None ):
-            pass
+            return
 
         GL.glClear( GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT )
 
         GL.glViewport( 0, 0, self.wh[0], self.wh[1] )
 
-        rot_x = Math3D.genRotMat( "X", self.rot, degrees=True )
-        #rot_y = Math3D.genRotMat( "Y", self.rot+90, degrees=True )
-        stat_y= Math3D.genRotMat( "Y", 17.5, degrees=True )
+        rot_x = genRotMat( "X", self.rot, degrees=True )
+        #rot_y = genRotMat( "Y", self.rot+90, degrees=True )
+        stat_y= genRotMat( "Y", 17.5, degrees=True )
 
         GL.glUniformMatrix4fv( self.rot_loc, 1, GL.GL_TRUE, np.dot( stat_y, rot_x ) )
 
