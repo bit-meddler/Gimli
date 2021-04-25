@@ -68,15 +68,17 @@ class Shaders( object ):
     """
 
 
-class GLVP( QtWidgets.QOpenGLWidget, QtGui.QOpenGLFunctions ):
+class GLVP( QtWidgets.QOpenGLWidget ):
 
     def __init__( self, parent=None ):
         # Odd Super call required with multi inheritance
         QtWidgets.QOpenGLWidget.__init__( self, parent )
-        QtGui.QOpenGLFunctions.__init__( self )
+
+        # Lock out GLPaint
+        self.configured = False
 
         # OpenGL setup
-        self.bgcolor = [ 0.0, 0.1, 0.1, 1.0 ]
+        self.bgcolour = [ 0.0, 0.1, 0.1, 1.0 ]
         self.shader_attr_locs = {}
         #self.shader = QtGui.QOpenGLShaderProgram( self.context() )
 
@@ -87,84 +89,108 @@ class GLVP( QtWidgets.QOpenGLWidget, QtGui.QOpenGLFunctions ):
         self.rot = 1.0
         self.rot_loc = None
 
+        # ticks for redraws / updates
+        self.timer = QtCore.QTimer()
+        self.timer.timeout.connect( self.update )
+
+
     def _prepareResources( self ):
         #        positions         colors          texture coords
         cube = [-0.5, -0.5, 0.5,   1.0, 0.0, 0.0,  0.0, 0.0,
-                 0.5, -0.5, 0.5,   0.0, 1.0, 0.0,  1.0, 0.0,
-                 0.5,  0.5, 0.5,   0.0, 0.0, 1.0,  1.0, 1.0,
+                0.5, -0.5, 0.5,   0.0, 1.0, 0.0,  1.0, 0.0,
+                0.5,  0.5, 0.5,   0.0, 0.0, 1.0,  1.0, 1.0,
                 -0.5,  0.5, 0.5,   1.0, 1.0, 1.0,  0.0, 1.0,
-     
+
                 -0.5, -0.5, -0.5,  1.0, 0.0, 0.0,  0.0, 0.0,
-                 0.5, -0.5, -0.5,  0.0, 1.0, 0.0,  1.0, 0.0,
-                 0.5,  0.5, -0.5,  0.0, 0.0, 1.0,  1.0, 1.0,
+                0.5, -0.5, -0.5,  0.0, 1.0, 0.0,  1.0, 0.0,
+                0.5,  0.5, -0.5,  0.0, 0.0, 1.0,  1.0, 1.0,
                 -0.5,  0.5, -0.5,  1.0, 1.0, 1.0,  0.0, 1.0,
-     
-                 0.5, -0.5, -0.5,  1.0, 0.0, 0.0,  0.0, 0.0,
-                 0.5,  0.5, -0.5,  0.0, 1.0, 0.0,  1.0, 0.0,
-                 0.5,  0.5,  0.5,  0.0, 0.0, 1.0,  1.0, 1.0,
-                 0.5, -0.5,  0.5,  1.0, 1.0, 1.0,  0.0, 1.0,
-     
+
+                0.5, -0.5, -0.5,  1.0, 0.0, 0.0,  0.0, 0.0,
+                0.5,  0.5, -0.5,  0.0, 1.0, 0.0,  1.0, 0.0,
+                0.5,  0.5,  0.5,  0.0, 0.0, 1.0,  1.0, 1.0,
+                0.5, -0.5,  0.5,  1.0, 1.0, 1.0,  0.0, 1.0,
+
                 -0.5,  0.5, -0.5,  1.0, 0.0, 0.0,  0.0, 0.0,
                 -0.5, -0.5, -0.5,  0.0, 1.0, 0.0,  1.0, 0.0,
                 -0.5, -0.5,  0.5,  0.0, 0.0, 1.0,  1.0, 1.0,
                 -0.5,  0.5,  0.5,  1.0, 1.0, 1.0,  0.0, 1.0,
-     
+
                 -0.5, -0.5, -0.5,  1.0, 0.0, 0.0,  0.0, 0.0,
-                 0.5, -0.5, -0.5,  0.0, 1.0, 0.0,  1.0, 0.0,
-                 0.5, -0.5,  0.5,  0.0, 0.0, 1.0,  1.0, 1.0,
+                0.5, -0.5, -0.5,  0.0, 1.0, 0.0,  1.0, 0.0,
+                0.5, -0.5,  0.5,  0.0, 0.0, 1.0,  1.0, 1.0,
                 -0.5, -0.5,  0.5,  1.0, 1.0, 1.0,  0.0, 1.0,
-     
-                 0.5,  0.5, -0.5,  1.0, 0.0, 0.0,  0.0, 0.0,
+
+                0.5,  0.5, -0.5,  1.0, 0.0, 0.0,  0.0, 0.0,
                 -0.5,  0.5, -0.5,  0.0, 1.0, 0.0,  1.0, 0.0,
                 -0.5,  0.5,  0.5,  0.0, 0.0, 1.0,  1.0, 1.0,
-                 0.5,  0.5,  0.5,  1.0, 1.0, 1.0,  0.0, 1.0,
-        ]
+                0.5,  0.5,  0.5,  1.0, 1.0, 1.0,  0.0, 1.0,
+                ]
         cube = np.array( cube, dtype=np.float32 )
 
         # ( element count, offset to first element in bytes )
         self.stride_data = [ [3, 0], [3, 3*cube.itemsize], [2, 6*cube.itemsize] ]
         self.line_sz = 8 * cube.itemsize
- 
+
         indices = [
-             0,  1,  2,  2,  3,  0,
-             4,  5,  6,  6,  7,  4,
-             8,  9, 10, 10, 11,  8,
+            0,  1,  2,  2,  3,  0,
+            4,  5,  6,  6,  7,  4,
+            8,  9, 10, 10, 11,  8,
             12, 13, 14, 14, 15, 12,
             16, 17, 18, 18, 19, 16,
             20, 21, 22, 22, 23, 20,
         ]
-        indices = np.array( indices, dtype=np.uint16 )
+        self.indices = np.array( indices, dtype=np.uint )
 
         self.num_idx = len( indices )
+        self.first_idx = 0
 
-        # VBO
-        vbo = GL.glGenBuffers( 1 )
-        GL.glBindBuffer( GL.GL_ARRAY_BUFFER, vbo )
-        GL.glBufferData( GL.GL_ARRAY_BUFFER, cube.nbytes, cube, GL.GL_STATIC_DRAW )
+        # Generate OGL Buffers
 
-        ebo = GL.glGenBuffers( 1 )
-        GL.glBindBuffer( GL.GL_ELEMENT_ARRAY_BUFFER, ebo )
-        GL.glBufferData( GL.GL_ELEMENT_ARRAY_BUFFER, indices.nbytes, indices, GL.GL_STATIC_DRAW )
+        # Main VAO
+        self.vao = QtGui.QOpenGLVertexArrayObject()
+        self.vao.create()
+        vaoBinder = QtGui.QOpenGLVertexArrayObject.Binder( self.vao )
 
-        # load and setup texture
-        texture = GL.glGenTextures( 1 )
-        GL.glBindTexture( GL.GL_TEXTURE_2D, texture )
+        # Vertex Data VBO
+        self.vbo = QtGui.QOpenGLBuffer( QtGui.QOpenGLBuffer.VertexBuffer )
+        self.vbo.create()
+        self.vbo.setUsagePattern( QtGui.QOpenGLBuffer.StaticDraw )
 
+        # Load VBO
+        self.vbo.bind()
+        self.vbo.allocate( cube.tobytes(), cube.nbytes )
+        self.vbo.release()
 
-        img = cv2.imread( "wood.jpg" , cv2.IMREAD_COLOR )
+        # Index Buffer
+        self.ibo = QtGui.QOpenGLBuffer( QtGui.QOpenGLBuffer.IndexBuffer )
+        self.ibo.create()
+        self.ibo.setUsagePattern( QtGui.QOpenGLBuffer.StaticDraw )
+
+        # Load IBO
+        self.ibo.bind()
+        self.ibo.allocate( self.indices.tobytes(), self.indices.nbytes )
+        self.ibo.release()
+
+        # Load Texture Image
+        img = cv2.imread( "wood.jpg", cv2.IMREAD_COLOR )
         rgb_img = cv2.cvtColor( img, cv2.COLOR_BGR2RGB )
-        i_h, i_w, _ = img.shape
-        
-        GL.glTexImage2D( GL.GL_TEXTURE_2D, 0, GL.GL_RGB, i_w, i_h, 0, GL.GL_RGB, GL.GL_UNSIGNED_BYTE, rgb_img )
+        i_h, i_w, _ = rgb_img.shape
 
-        # Set the texture wrapping parameters
-        GL.glTexParameteri( GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_S, GL.GL_CLAMP_TO_EDGE )
-        GL.glTexParameteri( GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_T, GL.GL_CLAMP_TO_EDGE )
+        # convert cv2 Image to QImage
+        q_img = QtGui.QImage( rgb_img.data, i_w, i_h, (3 * i_w), QtGui.QImage.Format_RGB888 )
 
-        # Set texture filtering parameters
-        GL.glTexParameteri( GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR )
-        GL.glTexParameteri( GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR )
+        # Create Texture
+        self.texture = QtGui.QOpenGLTexture( QtGui.QOpenGLTexture.Target2D ) # Target2D === GL_TEXTURE_2D
+        self.texture.create()
+        self.texture.bind()
+        self.texture.setData( q_img )
+        self.texture.setMinMagFilters( QtGui.QOpenGLTexture.Linear, QtGui.QOpenGLTexture.Linear )
+        self.texture.setWrapMode( QtGui.QOpenGLTexture.DirectionS, QtGui.QOpenGLTexture.ClampToEdge )
+        self.texture.setWrapMode( QtGui.QOpenGLTexture.DirectionT, QtGui.QOpenGLTexture.ClampToEdge )
 
+        # Release the VAO Mutex Binder
+        del( vaoBinder )
 
     def _configureShaders( self ):
 
@@ -177,22 +203,56 @@ class GLVP( QtWidgets.QOpenGLWidget, QtGui.QOpenGLFunctions ):
             self.shader_attr_locs[ name ] = i
             self.shader.bindAttributeLocation( name, i )
 
-        self.shader.link()
+        is_linked = self.shader.link()
+        if( not is_linked ):
+            print( "Error linking shader!" )
+
         self.shader.bind()
 
+        self.rot_loc = self.shader.uniformLocation( "u_rotation" )
+
+        self.shader.release()
+
     def _configureVertexAttribs( self ):
+        self.vbo.bind()
         f = QtGui.QOpenGLContext.currentContext().functions()
+        f.initializeOpenGLFunctions()
         for name, (num, offset) in zip( Shaders.program_attrs, self.stride_data ):
+            print( "Setting VAP on {}".format( name ) )
             ptr = VoidPtr( offset )
             f.glEnableVertexAttribArray( self.shader_attr_locs[ name ] )
-            f.glVertexAttribPointer( self.shader_attr_locs[ name ],
+            f.glVertexAttribPointer(  self.shader_attr_locs[ name ],
                                       num,
                                       GL.GL_FLOAT,
                                       GL.GL_FALSE,
                                       self.line_sz,
                                       ptr )
+        self.vbo.release()
 
-        self.rot_loc = self.shader.uniformLocation( "u_rotation" )
+    def getGlInfo( self, context ):
+        print( "Getting GL Info" )
+        f = QtGui.QOpenGLFunctions( context )
+        f.initializeOpenGLFunctions()
+        ven = f.glGetString( GL.GL_VENDOR )
+        ren = f.glGetString( GL.GL_RENDERER )
+        ver = f.glGetString( GL.GL_VERSION )
+        slv = f.glGetString( GL.GL_SHADING_LANGUAGE_VERSION )
+        info = """Vendor: {}\nRenderer: {}\nOpenGL Version: {}\nShader Version: {}""".format( ven, ren, ver, slv )
+        return info
+
+    def _onClosing( self ):
+        """ Clean close of OGL resources """
+        print( "Clean Close" )
+        self.context().makeCurrent()
+
+        self.vbo.destroy()
+        self.ibo.destroy()
+        self.vao.destroy()
+
+        del( self.shader )
+        self.shader = None
+
+        self.doneCurrent()
 
 
     # Qt funcs -------------------------------------------------------
@@ -205,56 +265,83 @@ class GLVP( QtWidgets.QOpenGLWidget, QtGui.QOpenGLFunctions ):
 
     # gl funs --------------------------------------------------------
     def initializeGL( self ):
+        # init GL Context
+        ctx = self.context()
+        ctx.aboutToBeDestroyed.connect( self._onClosing )
+
+        print( self.getGlInfo( ctx ) )
+
+        f = QtGui.QOpenGLFunctions( ctx )
+        f.initializeOpenGLFunctions()
+
         # shaders
         self._configureShaders()
 
-        # buffers
+        # buffers & Textures
+        f.glEnable( GL.GL_TEXTURE_2D )
         self._prepareResources()
 
         # Attrs
         self._configureVertexAttribs()
 
         # misc
-        #self.glEnable( GL.GL_TEXTURE_2D )
-        #GL.glHint( GL.GL_POINT_SMOOTH_HINT, GL.GL_NICEST )
-        #GL.glEnable( GL.GL_POINT_SMOOTH )
-        #GL.glEnable( GL.GL_DEPTH_TEST )
-        #GL.glEnable( GL.GL_CULL_FACE )
+        f.glClearColor( *self.bgcolour )
+        #f.glEnable( GL.GL_POINT_SMOOTH )
+        #f.glEnable( GL.GL_DEPTH_TEST )
+        #f.glEnable( GL.GL_BLEND )
+        #f.glHint( GL.GL_POINT_SMOOTH_HINT, GL.GL_NICEST )
+        #f.glBlendFunc( GL.GL_SRC_ALPHA, GL.GL_ONE_MINUS_SRC_ALPHA )
 
-        GL.glEnable( GL.GL_BLEND )
-        GL.glBlendFunc( GL.GL_SRC_ALPHA, GL.GL_ONE_MINUS_SRC_ALPHA )
-        GL.glClearColor( *self.bgcolor )
+        # Start auto updates
+        self.timer.start( 16 )  # approx 60fps
 
-        # ticks for redraws
-        self.timer = QtCore.QTimer()
-        self.timer.timeout.connect( self.update )
-        self.timer.start( 16 ) # approx 60fps
+        self.configured = True
 
     def paintGL( self ):
         # guard against early drawing
-        if( self.rot_loc is None ):
+        if( not self.configured ):
             return
 
+        # get Context
+        ctx = self.context()
+        f = QtGui.QOpenGLFunctions( ctx )
+        f.initializeOpenGLFunctions()
+
+        # attach VAO
+        vaoBinder = QtGui.QOpenGLVertexArrayObject.Binder( self.vao )
         self.shader.bind()
 
+        # ??? I'm I supposed to bind these guys here?
+        self.vbo.bind()
+        self.ibo.bind()
 
-        # Drawing Settings
-        #self.glHint( GL.GL_POINT_SMOOTH_HINT, GL.GL_NICEST )
-        #self.glClear( GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT )
-        #self.glEnable( GL.GL_POINT_SMOOTH )
-        #self.glEnable( GL.GL_DEPTH_TEST )
-
+        # Move the Cube
         rotation = QtGui.QMatrix4x4()
         rotation.rotate( self.rot, 1.0, 0.0, 0.0 )
         rotation.rotate( 17.5, 0.0, 1.0, 0.0 )
 
         self.shader.setUniformValue( self.rot_loc, rotation )
 
-        self.glDrawElements( GL.GL_TRIANGLES, self.num_idx, GL.GL_UNSIGNED_SHORT, 0 )
-
-        self.shader.release()
+        # Draw
+        f.glClear( GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT )
+        ptr = VoidPtr( self.first_idx )
+        f.glDrawElements( GL.GL_TRIANGLES, self.num_idx, GL.GL_UNSIGNED_INT, ptr )
 
         self.rot += 1.0
+
+        # Show em it's doing something...
+        if( self.rot % 80 == 0 ):
+            print( ".", end="\n" )
+        else:
+            print( ".", end="" )
+
+
+        # Done
+        self.vbo.release()
+        self.ibo.release()
+        self.shader.release()
+        del( vaoBinder )
+
 
     def resizeGL( self, width, height ):
         self.wh = ( width, height )
