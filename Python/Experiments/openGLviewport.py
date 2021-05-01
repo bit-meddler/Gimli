@@ -151,8 +151,8 @@ class BasicShaders( ShaderHelper ):
         uniform sampler2D s_texture ;
 
         void main() {
-          // outColor = texture( s_texture, v_uvCoord ) ; // * vec4( v_colour, 1.0f ) ;
-          outColor = vec4( v_colour, 1.0 ) ;
+          outColor = texture( s_texture, v_uvCoord ) * vec4( v_colour, 1.0f ) ;
+          // outColor = vec4( v_colour, 1.0 ) ;
         }
     """
 
@@ -214,12 +214,8 @@ class GLVP( QtWidgets.QOpenGLWidget ):
                 -0.5,  0.5, -0.5,  0.0, 1.0, 0.0,  1.0, 0.0,
                 -0.5,  0.5,  0.5,  0.0, 0.0, 1.0,  1.0, 1.0,
                  0.5,  0.5,  0.5,  1.0, 1.0, 1.0,  0.0, 1.0,
-                ]
-        # OK Just try a tri :|
-        cube = [-0.5, -0.5, 0.5,   1.0, 0.0, 0.0,  0.0, 0.0,
-                 0.0,  0.5, 0.5,   0.0, 1.0, 0.0,  1.0, 0.0,
-                 0.5, -0.5, 0.5,   0.0, 0.0, 1.0,  1.0, 1.0, ]
-        cube = np.array( cube, dtype=np.float32 )
+        ]
+        obj = np.array( cube, dtype=np.float32 )
 
         indices = [
              0,  1,  2,  2,  3,  0,
@@ -229,9 +225,7 @@ class GLVP( QtWidgets.QOpenGLWidget ):
             16, 17, 18, 18, 19, 16,
             20, 21, 22, 22, 23, 20,
         ]
-        indices = [
-            0, 1, 2,
-        ]
+
         self.indices = np.array( indices, dtype=np.uint )
 
         self.num_idx = len( indices )
@@ -251,7 +245,7 @@ class GLVP( QtWidgets.QOpenGLWidget ):
 
         # Load VBO
         self.vbo.bind()
-        self.vbo.allocate( cube.tobytes(), cube.nbytes )
+        self.vbo.allocate( obj.tobytes(), obj.nbytes )
         self.vbo.release()
 
         # Index Buffer
@@ -264,24 +258,23 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         self.ibo.allocate( self.indices.tobytes(), self.indices.nbytes )
         self.ibo.release()
 
-        # Skip texture for now, commented out in shader
-        if( False ):
-            # Load Texture Image
-            img = cv2.imread( "wood.jpg", cv2.IMREAD_COLOR )
-            rgb_img = cv2.cvtColor( img, cv2.COLOR_BGR2RGB )
-            i_h, i_w, _ = rgb_img.shape
+        # Load Texture Image
+        img = cv2.imread( "wood.jpg", cv2.IMREAD_COLOR )
+        rgb_img = cv2.cvtColor( img, cv2.COLOR_BGR2RGB )
+        i_h, i_w, _ = rgb_img.shape
 
-            # convert cv2 Image to QImage
-            q_img = QtGui.QImage( rgb_img.data, i_w, i_h, (3 * i_w), QtGui.QImage.Format_RGB888 )
+        # convert cv2 Image to QImage
+        q_img = QtGui.QImage( rgb_img.data, i_w, i_h, (3 * i_w), QtGui.QImage.Format_RGB888 )
 
-            # Create Texture
-            self.texture = QtGui.QOpenGLTexture( QtGui.QOpenGLTexture.Target2D ) # Target2D === GL_TEXTURE_2D
-            self.texture.create()
-            self.texture.bind()
-            self.texture.setData( q_img )
-            self.texture.setMinMagFilters( QtGui.QOpenGLTexture.Linear, QtGui.QOpenGLTexture.Linear )
-            self.texture.setWrapMode( QtGui.QOpenGLTexture.DirectionS, QtGui.QOpenGLTexture.ClampToEdge )
-            self.texture.setWrapMode( QtGui.QOpenGLTexture.DirectionT, QtGui.QOpenGLTexture.ClampToEdge )
+        # Create Texture
+        self.texture = QtGui.QOpenGLTexture( QtGui.QOpenGLTexture.Target2D ) # Target2D === GL_TEXTURE_2D
+        self.texture.create()
+        self.texture.bind()
+        self.texture.setData( q_img )
+        self.texture.setMinMagFilters( QtGui.QOpenGLTexture.Linear, QtGui.QOpenGLTexture.Linear )
+        self.texture.setWrapMode( QtGui.QOpenGLTexture.DirectionS, QtGui.QOpenGLTexture.ClampToEdge )
+        self.texture.setWrapMode( QtGui.QOpenGLTexture.DirectionT, QtGui.QOpenGLTexture.ClampToEdge )
+        self.texture.release()
 
         # Release the VAO Mutex Binder
         del( vaoBinder )
@@ -310,6 +303,7 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         self.shader.release()
 
     def _configureVertexAttribs( self ):
+        vaoBinder = QtGui.QOpenGLVertexArrayObject.Binder( self.vao )
         self.vbo.bind()
         f = QtGui.QOpenGLContext.currentContext().functions()
         f.initializeOpenGLFunctions()
@@ -326,6 +320,7 @@ class GLVP( QtWidgets.QOpenGLWidget ):
                                       self._shaders.line_size,
                                       os_ptr )
         self.vbo.release()
+        del( vaoBinder )
 
     def getGlInfo( self, context, show_ext=False ):
         print( "Getting GL Info" )
@@ -403,11 +398,11 @@ class GLVP( QtWidgets.QOpenGLWidget ):
 
         # misc
         f.glClearColor( *self.bgcolour )
-        #f.glEnable( GL.GL_POINT_SMOOTH )
-        #f.glEnable( GL.GL_DEPTH_TEST )
-        #f.glEnable( GL.GL_BLEND )
-        #f.glHint( GL.GL_POINT_SMOOTH_HINT, GL.GL_NICEST )
-        #f.glBlendFunc( GL.GL_SRC_ALPHA, GL.GL_ONE_MINUS_SRC_ALPHA )
+        f.glEnable( GL.GL_DEPTH_TEST )
+        f.glEnable( GL.GL_BLEND )
+        f.glEnable( GL.GL_POINT_SMOOTH )
+        f.glHint( GL.GL_POINT_SMOOTH_HINT, GL.GL_NICEST )
+        f.glBlendFunc( GL.GL_SRC_ALPHA, GL.GL_ONE_MINUS_SRC_ALPHA )
 
         # Start auto updates
         self.timer.start( 16 )  # approx 60fps
@@ -422,7 +417,6 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         # get Context
         ctx = self.context()
         f = QtGui.QOpenGLFunctions( ctx )
-        #f.initializeOpenGLFunctions()
 
         # gl Viewport
         f.glViewport( 0, 0, self.wh[0], self.wh[1] )
@@ -434,6 +428,7 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         # ??? am I supposed to bind these guys here?
         self.vbo.bind()
         self.ibo.bind()
+        self.texture.bind()
 
         # Move the Cube
         rotation = QtGui.QMatrix4x4() # Remember these are transpose
@@ -449,16 +444,10 @@ class GLVP( QtWidgets.QOpenGLWidget ):
 
         self.rot += 1.0
 
-        # Show me it's doing something, even if it's not drawing anything...
-        if( self.rot % 80 == 0 ):
-            print( ".", end="\n" )
-        else:
-            print( ".", end="" )
-
-
         # Done
         self.vbo.release()
         self.ibo.release()
+        self.texture.release()
         self.shader.release()
         del( vaoBinder )
 
