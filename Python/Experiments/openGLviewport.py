@@ -52,7 +52,7 @@ class OGLWindow( QtWidgets.QWidget ):
         self.glWidget.setBgCol( colour )
 
 
-class TestLoadingShaders( ShaderHelper ):
+class LoadShaders( ShaderHelper ):
     shader_path = os.path.join( CODE_PATH, "GUI", "Shaders" )
     vtx_f = "simpleVCTpack.vert"
     frg_f = "simpleCTadd.frag"
@@ -69,7 +69,7 @@ class GLVP( QtWidgets.QOpenGLWidget ):
 
         # OpenGL setup
         self.bgcolour = [ 0.0, 0.1, 0.1, 1.0 ]
-        self._shader_info = TestLoadingShaders()
+        self._shader_info = LoadShaders()
 
         self.shader_pg = None
         self.f = None
@@ -261,8 +261,8 @@ class GLVP( QtWidgets.QOpenGLWidget ):
 
         self.vbo.destroy()
         self.ibo.destroy()
-        self.vao.destroy()
         self.texture.destroy()
+        self.vao.destroy()
 
         del( self.shader_pg )
         self.shader_pg = None
@@ -286,10 +286,9 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         ctx = self.context()
         ctx.aboutToBeDestroyed.connect( self._onClosing )
 
+        # get Context bound GL Funcs
         self.f = QtGui.QOpenGLFunctions( ctx )
         self.f.initializeOpenGLFunctions()
-
-        print( self.getGlInfo() )
 
         # shaders
         self._configureShaders()
@@ -319,7 +318,15 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         if( not self.configured ):
             return
 
+        # Going to try overpainting again...
+        painter = QtGui.QPainter()
+        painter.begin( self )
+
+        # Enable GL
+        painter.beginNativePainting()
+
         # gl Viewport
+        self.f.glEnable( GL.GL_DEPTH_TEST ) # Has to be reset because painter :(
         self.f.glClearColor( *self.bgcolour )
         self.f.glViewport( 0, 0, self.wh[0], self.wh[1] )
 
@@ -346,12 +353,21 @@ class GLVP( QtWidgets.QOpenGLWidget ):
 
         self.rot += 1.0
 
-        # Done
+        # Done GL
         self.vbo.release()
         self.ibo.release()
         self.texture.release()
         self.shader_pg.release()
         del( vao_lock )
+        self.f.glDisable( GL.GL_DEPTH_TEST )
+        painter.endNativePainting()
+
+        # Try drawing some text
+        painter.setRenderHint( QtGui.QPainter.TextAntialiasing )
+        painter.setPen( QtCore.Qt.white )
+        painter.drawText( 10, 200, "Ha Ha I'm using the Internet" )
+
+        painter.end()
 
 
     def resizeGL( self, width, height ):

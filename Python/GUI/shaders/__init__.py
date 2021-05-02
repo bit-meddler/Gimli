@@ -22,6 +22,7 @@ class ShaderHelper( object ):
                 r"\s+(?P<type>[a-z]+)(?P<shape>\d*(?:x\d)?)" + \
                 r"\s*(?P<name>.*?)\s*;"
 
+    # todo: update Regex for fragment shaders (sampler2d fails)
     UNIFORM_RE = r".*(?:uniform)" + \
                  r"\s+(?P<type>[a-z]+)(?P<shape>\d*(?:x\d)?)" + \
                  r"\s*(?P<name>.*?)\s*;"
@@ -123,7 +124,7 @@ class ShaderHelper( object ):
             layout_data[ int( attr[ "location" ] ) ] = ( attr[ "name" ], dims, offset )
             offset += dims * size
 
-        # Stash the layout data
+        # Collate the Vertex layout data
         self.attr_locs = {}
 
         layout = []
@@ -135,8 +136,37 @@ class ShaderHelper( object ):
         self.layout = tuple( layout )
         self.line_size = offset
 
-        # TODO: Look for uniforms as well
-        # TODO: Validate vtx 'outs' match frg 'in's
+        # Vertex Uniform data
+        self.vtx_uniforms = {}
+        for uni in uniforms:
+            self.vtx_uniforms[ uni["name"] ] = {
+                "type"  : uni["type"],
+                "shape" : uni["shape"],
+            }
+
+        # Fragment uniforms
+        uniforms = []
+        for line in self.frg_src.splitlines():
+            if (not line):
+                continue
+
+            match = self.UNIFORM_MATCH.match( line )
+            if (match):
+                uniforms.append( match.groupdict() )
+                continue
+
+            match = self.MAIN_MATCH.match( line )
+            if (match):
+                break
+
+        self.frg_uniforms = {}
+        for uni in uniforms:
+            self.frg_uniforms[ uni["name"] ] = {
+                "type"  : uni["type"],
+                "shape" : uni["shape"],
+            }
+
+        # TODO: Validate vtx 'outs' match frg 'in's ?
 
 
 if( __name__ == "__main__" ):
@@ -168,9 +198,20 @@ if( __name__ == "__main__" ):
             }
         """
 
-        shader_info = BasicShaders()
+    shader_info = BasicShaders()
 
-        for name, num, offset in shader_info:
-            location = shader_info.attr_locs[ name ]
-            print( "Found Vertex Attribute '{}' @ location {} with {} elems from {}b".format( name, location, num, offset ) )
-            print( "The Line Size is {}".format( shader_info.line_size ) )
+    print( "Vertex Layout data")
+    for name, num, offset in shader_info.layout:
+        location = shader_info.attr_locs[ name ]
+        print( "Found Vertex Attribute '{}' @ location {} with {} elems from {}b".format( name, location, num, offset ) )
+    print( "The Line Size is {}b\n".format( shader_info.line_size ) )
+
+    print( "Vertex Uniform data" )
+    for name, data in shader_info.vtx_uniforms.items():
+        print( "Uniform '{}' is a {} with shape of {}\n".format( name, data["type"], data["shape"] ) )
+
+    print( "Fragment Uniform data" )
+    for name, data in shader_info.frg_uniforms.items():
+        print( "Uniform '{}' is a {} with shape of {}n".format( name, data["type"], data["shape"] ) )
+
+
