@@ -10,6 +10,7 @@ print( CODE_PATH )
 sys.path.append( CODE_PATH )
 
 from Core.math3D import *
+from GUI.shaders import ShaderHelper
 
 import cv2
 
@@ -17,7 +18,6 @@ from PySide2 import QtCore, QtGui, QtWidgets
 from shiboken2 import VoidPtr
 from OpenGL import GL
 
-import re
 from textwrap import TextWrapper
 
 
@@ -52,124 +52,8 @@ class OGLWindow( QtWidgets.QWidget ):
         self.glWidget.setBgCol( colour )
 
 
-class ShaderHelper( object ):
-    # Overload these with your shader program
-    vtx_src = None
-    frg_src = None
-    geo_src = None
-
-    # or place a path to the file / QResource
-    vtx_f = None
-    frg_f = None
-    geo_f = None
-
-    LAYOUT_RE = r".*(?:layout)" + \
-                r"(?:\(\s*location\s*=\s*(?P<location>\d)\s*\))?" + \
-                r"\s+(?P<specifier>\w+)" + \
-                r"\s+(?P<type>[a-z]+)(?P<shape>\d*(?:x\d)?)" + \
-                r"\s*(?P<name>.*?)\s*;"
-
-    MAIN_RE = r".*void\s+main\(\).*"
-
-    LAYOUT_MATCH = re.compile( LAYOUT_RE  )
-    MAIN_MATCH   = re.compile( MAIN_RE )
-
-    def __init__( self ):
-        # Attempt to load files
-        for file_path in (self.vtx_f,self.frg_f,self.geo_f,):
-            if( file_path is None ):
-                continue
-
-            # there is a path, attempt to load
-            if( os.path.exists( file_path ) ):
-                with open( file_path, "r" ) as fh:
-                    program = fh.read()
-
-                if( file_path.endswith(".vert") ):
-                    self.vtx_src = program
-
-                elif( file_path.endswith(".frag") ):
-                    self.frg_src = program
-
-                elif( file_path.endswith(".geom") ):
-                    self.geo_src = program
-
-                # elif( file_path.endswith(".tesc") ):
-                #     self.unimp = program
-
-                # elif( file_path.endswith(".tese") ):
-                #     self.unimp = program
-
-                # elif( file_path.endswith(".comp") ):
-                #     self.unimp = program
-
-        # Examine the Vertex Shader's attributes
-        attr_data = []
-        for line in self.vtx_src.splitlines():
-            if (not line):
-                continue
-
-            match = self.LAYOUT_MATCH.match( line )
-            if (match):
-                attr_data.append( match.groupdict() )
-                continue
-
-            match = self.MAIN_MATCH.match( line )
-            if (match):
-                break
-
-        # Determine the layout data
-        offset = 0
-        encountered = set()
-        layout_data = {}
-
-        for idx, attr in enumerate( attr_data ):
-            # some preemptive error checks
-            if (attr[ "name" ] in encountered):
-                print( "Warning, already processed a variable called '{}'".format( attr[ "name" ] ) )
-            encountered.add( attr[ "name" ] )
-
-            if (attr[ "location" ] in layout_data):
-                print( "Warning, already processed data in location '{}'".format( attr[ "location" ] ) )
-
-            # New in GLSL 4.0 double, dvecN, dmatN, dmatNxM
-            size = 8 if (attr[ "type" ].startswith( "d" )) else 4  # even a bool is a 32-bit value
-
-            dims = 0
-            if (attr[ "shape" ] == ""):  # Scaler
-                dims = 1
-
-            elif ("x" in attr[ "shape" ]):  # Has to be a matrix
-                N, M = map( int, attr[ "shape" ].split( "x" ) )
-                dims = N * M
-
-            else:  # either a vec or a square mat
-                N = int( attr[ "shape" ] )
-                if ("mat" in attr[ "type" ]):
-                    dims = N * N
-                else:
-                    dims = N
-
-            layout_data[ int( attr[ "location" ] ) ] = ( attr[ "name" ], dims, offset )
-            offset += dims * size
-
-        # Stash the layout data
-        self.attr_locs = {}
-
-        layout = []
-        for idx in sorted( layout_data.keys() ):
-            data = layout_data[ idx ]
-            layout.append( data )
-            self.attr_locs[ data[0] ] = idx
-
-        self.layout = tuple( layout )
-        self.line_size = offset
-
-        # TODO: Look for uniforms as well
-        # TODO: Validate vtx 'outs' match frg 'in's
-
-
 class TestLoadingShaders( ShaderHelper ):
+    shader_path = os.path.join( CODE_PATH, "GUI", "Shaders" )
     vtx_f = "simpleVCTpack.vert"
     frg_f = "simpleCTadd.frag"
 
@@ -185,7 +69,7 @@ class GLVP( QtWidgets.QOpenGLWidget ):
 
         # OpenGL setup
         self.bgcolour = [ 0.0, 0.1, 0.1, 1.0 ]
-        self._shaders = TestLoadingShaders()
+        self._shader_info = TestLoadingShaders()
 
         self.shader_pg = None
         self.f = None
@@ -305,11 +189,11 @@ class GLVP( QtWidgets.QOpenGLWidget ):
 
         self.shader_pg = QtGui.QOpenGLShaderProgram( self.context() )
 
-        self.shader_pg.addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, self._shaders.vtx_src  )
-        self.shader_pg.addShaderFromSourceCode( QtGui.QOpenGLShader.Fragment, self._shaders.frg_src )
+        self.shader_pg.addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, self._shader_info.vtx_src  )
+        self.shader_pg.addShaderFromSourceCode( QtGui.QOpenGLShader.Fragment, self._shader_info.frg_src )
 
         # Bind attrs
-        for name, location in self._shaders.attr_locs.items():
+        for name, location in self._shader_info.attr_locs.items():
             self.shader_pg.bindAttributeLocation( name, location )
 
         is_linked = self.shader_pg.link()
@@ -329,8 +213,8 @@ class GLVP( QtWidgets.QOpenGLWidget ):
     def _configureVertexAttribs( self ):
         vao_lock = QtGui.QOpenGLVertexArrayObject.Binder( self.vao )
         self.vbo.bind()
-        for name, num, offset in self._shaders.layout:
-            location = self._shaders.attr_locs[ name ]
+        for name, num, offset in self._shader_info.layout:
+            location = self._shader_info.attr_locs[ name ]
             print( "Setting VAP on '{}' @ {} with {} elems from {}b".format(
                 name, location, num, offset ) )
             os_ptr = VoidPtr( offset )
@@ -339,7 +223,7 @@ class GLVP( QtWidgets.QOpenGLWidget ):
                                       num,
                                       GL.GL_FLOAT,
                                       GL.GL_FALSE,
-                                      self._shaders.line_size,
+                                      self._shader_info.line_size,
                                       os_ptr )
         self.vbo.release()
         del( vao_lock )
