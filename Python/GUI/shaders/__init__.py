@@ -138,11 +138,13 @@ class ShaderHelper( object ):
 
         # Vertex Uniform data
         self.vtx_uniforms = {}
+        self.vtx_unis = {}
         for uni in uniforms:
             self.vtx_uniforms[ uni["name"] ] = {
                 "type"  : uni["type"],
                 "shape" : uni["shape"],
             }
+            self.vtx_unis[ uni["name"] ] = None
 
         # Fragment uniforms
         uniforms = []
