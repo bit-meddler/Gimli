@@ -6,7 +6,6 @@ import numpy as np
 import os, sys
 _git_root_ = os.path.dirname( os.path.dirname( os.path.dirname( os.path.realpath(__file__) ) ) )
 CODE_PATH = os.path.join( _git_root_, "Python" )
-print( CODE_PATH )
 sys.path.append( CODE_PATH )
 
 from Core.math3D import *
@@ -70,23 +69,24 @@ def genFloorGridData( divs, size=100.0, y_height=0.0 ):
     :return: (vtx, indxs) vertex array, index array
     """
     vtx_np, idx_np = None, None
-    dims = [2,2]
-    if( type( divs ) in (list, tuple) ):
-        dims[0], dims[1] = divs[0], divs[1]
-    else:
-        dims[0] = dims[1] = divs
+    dim_x, dim_z = 2, 2
 
-    h_x = dims[0]//2
-    h_z = dims[1]//2
+    if( type( divs ) in (list, tuple) ):
+        dim_x, dim_z = divs[0], divs[1]
+    else:
+        dim_x = dim_z = int( divs )
+
+    h_x, h_z = dim_x // 2, dim_z // 2
+    last_x, last_z = dim_x + 1, dim_z + 1
 
     # Vertexs
     step_x = 1.0 / (h_x)
     step_z = 1.0 / (h_z)
 
     vtx = []
-    for z in range( dims[1] + 1 ):
+    for z in range( last_z ):
         z_point = (step_z * z) - 1.0
-        for x in range( dims[0] + 1 ):
+        for x in range( last_x ):
             vtx.append( [(step_x * x) - 1.0, 0.0, z_point] )
 
     vtx_np = np.asarray( vtx, dtype=FLOAT_T )
@@ -100,9 +100,39 @@ def genFloorGridData( divs, size=100.0, y_height=0.0 ):
 
 
     # Indexs
-    # line in/out pairs to draw each grid, slice list for the parimiter, the major axis
+    # line in/out pairs to draw each grid, slice list for the perimeter, the major axis
+    row = [ [] for _ in range( last_z ) ]
+    col = [ [] for _ in range( last_x ) ]
+    for z in range( last_z ):
+        for x in range( last_x ):
+            idx = (z * last_x) + x
 
-    return (vtx_np, idx_np)
+            row[z].append( idx )
+            col[x].append( idx )
+
+            if( not (x==0 or x==dim_x) ):
+                row[z].append( idx )
+
+            if( not (z==0 or z==dim_z) ):
+                col[x].append( idx )
+
+    row_stride = len( row[0] )
+    col_stride = len( col[0] )
+
+    rows = [ idx for line in row for idx in line ]
+    cols = [ idx for line in col for idx in line ]
+
+    col_offset = len( rows )
+
+    outline = ( (0,row_stride),                 (col_offset+(dim_z*col_stride),col_stride),
+                (dim_x*row_stride, row_stride), (col_offset, col_stride), )
+
+    majors = ( (col_offset+(h_x*col_stride), col_stride),
+               (h_z*row_stride, row_stride))
+    idxs = np.asarray( rows + cols, dtype=np.uint32 )
+
+    # index slices
+    return (vtx_np, idxs, (outline, majors))
 
 
 class NavCam( object ):
@@ -161,6 +191,7 @@ class GLVP( QtWidgets.QOpenGLWidget ):
 
         # OpenGL setup
         self.bgcolour = self.DEFAULT_BG
+        self.vaos = {}
         self.buffers = {}
         self.shaders = {}
         self.f = None # glFunctions
@@ -168,7 +199,7 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         # Shader registry
         self.shader_sources = {
             "packedCT" : PackedColourTexture(),
-#            "simpleC"  : SimpleColour(),
+            "simpleC"  : SimpleColour(),
         }
 
         # canvas size
@@ -247,16 +278,17 @@ class GLVP( QtWidgets.QOpenGLWidget ):
 
 
         # Generate a Floor Grid
-        floor_vtx, floor_idx = genFloorGridData( 4, 100.0 )
+        floor_vtx, floor_idx, (floor_line, floor_mjrs) = genFloorGridData( 8, 100.0 )
 
         # Generate OGL Buffers
+        ########################################################################
 
         # Main VAO
-        self.vao = QtGui.QOpenGLVertexArrayObject()
-        self.vao.create()
-        vao_lock = QtGui.QOpenGLVertexArrayObject.Binder( self.vao )
+        self.vaos["cubes"] = QtGui.QOpenGLVertexArrayObject()
+        self.vaos["cubes"].create()
+        vao_lock = QtGui.QOpenGLVertexArrayObject.Binder( self.vaos["cubes"] )
 
-        # Cube Data
+        # Cube Data ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         self.buffers["cube.vbo"] = self._confBuffer( QtGui.QOpenGLBuffer.VertexBuffer,
                                                      QtGui.QOpenGLBuffer.StaticDraw,
                                                      data=obj )
@@ -265,16 +297,6 @@ class GLVP( QtWidgets.QOpenGLWidget ):
                                                      data=indices )
         self.buffers["cube.ibo.in"] = 0
         self.buffers["cube.ibo.idxs"] = len( indices )
-
-        # Grid Data
-        self.buffers[ "grid.vbo" ] = self._confBuffer( QtGui.QOpenGLBuffer.VertexBuffer,
-                                                       QtGui.QOpenGLBuffer.StaticDraw,
-                                                       data=floor_vtx )
-        self.buffers[ "grid.ibo" ] = self._confBuffer( QtGui.QOpenGLBuffer.IndexBuffer,
-                                                       QtGui.QOpenGLBuffer.StaticDraw,
-                                                       data=floor_idx )
-        self.buffers[ "grid.ibo.in" ] = 0
-        self.buffers[ "grid.ibo.idxs" ] = len( floor_vtx ) #<-----------
 
         # Load Texture Image
         img = cv2.imread( "wood.jpg", cv2.IMREAD_COLOR )
@@ -297,44 +319,66 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         # Release the VAO Mutex Binder
         del( vao_lock )
 
+        # Grid Data ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        self.vaos["grid"] = QtGui.QOpenGLVertexArrayObject()
+        self.vaos["grid"].create()
+        vao_lock = QtGui.QOpenGLVertexArrayObject.Binder( self.vaos["grid"] )
+
+        self.buffers[ "grid.vbo" ] = self._confBuffer( QtGui.QOpenGLBuffer.VertexBuffer,
+                                                       QtGui.QOpenGLBuffer.StaticDraw,
+                                                       data=floor_vtx )
+        self.buffers[ "grid.ibo" ] = self._confBuffer( QtGui.QOpenGLBuffer.IndexBuffer,
+                                                       QtGui.QOpenGLBuffer.StaticDraw,
+                                                       data=floor_idx )
+        self.buffers[ "grid.ibo.in" ] = 0
+        self.buffers[ "grid.ibo.idxs" ] = len( floor_idx )
+        self.buffers[ "grid.ibo.str.outline" ] = floor_line
+        self.buffers[ "grid.ibo.str.major" ] = floor_mjrs
+
+        del (vao_lock)
+
     # Generic GL Config --------------------------------------------------------
     def _configureShaders( self ):
 
-        for sname, helper in self.shader_sources.items():
+        for shader, helper in self.shader_sources.items():
+            print( "Preparing shader '{}'".format( shader ) )
 
-            self.shaders[ sname ] = QtGui.QOpenGLShaderProgram( self.context() )
+            self.shaders[ shader ] = QtGui.QOpenGLShaderProgram( self.context() )
 
-            self.shaders[ sname ].addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, helper.vtx_src  )
-            self.shaders[ sname ].addShaderFromSourceCode( QtGui.QOpenGLShader.Fragment, helper.frg_src )
+            self.shaders[ shader ].addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, helper.vtx_src  )
+            self.shaders[ shader ].addShaderFromSourceCode( QtGui.QOpenGLShader.Fragment, helper.frg_src )
 
             # Bind attrs
-            for aname, location in helper.attr_locs.items():
-                self.shaders[ sname ].bindAttributeLocation( aname, location )
+            for attr, location in helper.attr_locs.items():
+                self.shaders[ shader ].bindAttributeLocation( attr, location )
 
             # Link Shader
-            is_linked = self.shaders[ sname ].link()
+            is_linked = self.shaders[ shader ].link()
             if( not is_linked ):
-                print( "Error linking shader!" )
+                print( "  Error linking shader!" )
 
             # Locate uniforms
             for uniform, data in helper.vtx_uniforms.items():
-                location = self.shaders[ sname ].uniformLocation( uniform )
+                location = self.shaders[ shader ].uniformLocation( uniform )
                 helper.vtx_unis[ uniform ] = location
-                print( "Vtx uniform '{}' ({}{}) bound @ {}".format(
+                print( "  Vtx uniform '{}' ({}{}) bound @ {}".format(
                        uniform, data[ "type"  ], data[ "shape" ], location )
                 )
 
     def _configureAttribBindings( self ):
-        self._configureVertexAttribs( self.vao, self.buffers[ "cube.vbo" ], self.shader_sources["packedCT"] )
-        #self._configureVertexAttribs( self.vao, self.buffers[ "grid.vbo" ], self.shader_sources["simpleC"] )
+        self._configureVertexAttribs( self.vaos["grid"], "grid.vbo", "simpleC" )
+        self._configureVertexAttribs( self.vaos["cubes"], "cube.vbo", "packedCT" )
 
 
-    def _configureVertexAttribs( self, vao, buffer, shader_info ):
+    def _configureVertexAttribs( self, vao, buffer_name, shader_name ):
+        print( "Attaching VAPs on '{}' to shader '{}'".format( buffer_name, shader_name ) )
+        buffer = self.buffers[ buffer_name ]
+        helper = self.shader_sources[ shader_name ]
         vao_lock = QtGui.QOpenGLVertexArrayObject.Binder( vao )
         buffer.bind()
-        for name, num, offset in shader_info.layout:
-            location = shader_info.attr_locs[ name ]
-            print( "Setting VAP on '{}' @ {} with {} elems from {}b".format(
+        for name, num, offset in helper.layout:
+            location = helper.attr_locs[ name ]
+            print( "  Setting VAP on '{}' @ {} with {} elems from {}b".format(
                 name, location, num, offset )
             )
             os_ptr = VoidPtr( offset )
@@ -343,10 +387,11 @@ class GLVP( QtWidgets.QOpenGLWidget ):
                                            num,
                                            GL.GL_FLOAT,
                                            GL.GL_FALSE,
-                                           shader_info.line_size,
+                                           helper.line_size,
                                            os_ptr )
         buffer.release()
         del( vao_lock )
+        print( "This buffer line size is {}b".format( helper.line_size ) )
 
     def getGlInfo( self, show_ext=False ):
         print( "Getting GL Info" )
@@ -383,7 +428,9 @@ class GLVP( QtWidgets.QOpenGLWidget ):
             buff.destroy()
 
         self.texture.destroy()
-        self.vao.destroy()
+
+        for vao in self.vaos.values():
+            vao.destroy()
 
         for shader in self.shaders.items():
             del( shader )
@@ -544,9 +591,13 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         self.f.glEnable( GL.GL_DEPTH_TEST ) # Has to be reset because painter :(
         self.f.glClearColor( *self.bgcolour )
         #self.f.glViewport( 0, 0, self.wh[0], self.wh[1] )
+        self.f.glClear( GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT )
+
+        # Update View / Projection mats
+        pv = self.camera.proj * self.camera.view
 
         # attach VAO
-        vao_lock = QtGui.QOpenGLVertexArrayObject.Binder( self.vao )
+        vao_lock = QtGui.QOpenGLVertexArrayObject.Binder( self.vaos["cubes"] )
 
         # Cube Drawing
         shader = self.shaders["packedCT"]
@@ -557,45 +608,20 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         self.buffers["cube.ibo"].bind()
         self.texture.bind()
 
-        # Move the Cube
-        transform = QtGui.QMatrix4x4() # Remember these are transpose
-
-        # start drawing
-        self.f.glClear( GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT )
-
-        # Update View / Projection mats
-        pv = self.camera.proj * self.camera.view
-
         # striding data
         ptr = VoidPtr( self.buffers[ "cube.ibo.in" ] )
         num_idx = self.buffers[ "cube.ibo.idxs" ]
 
         # Draw a field of cubes
-        scale = 30.5
-        for i in range( 10 ):
-            y_rot = (self.rot/11.0) + (i*6.0)
-            for j in range( 10 ):
-                for k in range( 10 ):
-                    x = (i-5) * 4.5
-                    y = (j-5) * 4.5
-                    z = (-1-k) * 4.5
+        for transform in self.genCubeX( 3, 5, 3 ):
 
-                    x *= scale
-                    y *= scale
-                    z *= scale
-                    #print( x, y, z )
-                    transform.setToIdentity()
-                    transform.translate( x, y, z )
-                    transform.rotate( self.rot, 1.0, 0.0, 0.0 ) # ang, axis
-                    transform.rotate( y_rot, 0.0, 1.0, 0.0 )
-                    transform.rotate( i+j+k, 0.0, 0.0, 1.0 )
-                    transform.scale( 18.0 )
+            # Make ravey if above ground
+            n = 1.0 if (transform.column( 3 ).y() > 0.0) else 0.0
+            shader.setUniformValue( helper.vtx_unis[ "u_hilight" ], n  )
 
-                    mvp = pv * transform
-
-                    shader.setUniformValue( helper.vtx_unis[ "u_mvp" ], mvp )
-
-                    self.f.glDrawElements( GL.GL_TRIANGLES, num_idx, GL.GL_UNSIGNED_INT, ptr )
+            mvp = pv * transform
+            shader.setUniformValue( helper.vtx_unis[ "u_mvp" ], mvp )
+            self.f.glDrawElements( GL.GL_TRIANGLES, num_idx, GL.GL_UNSIGNED_INT, ptr )
 
         self.rot += 1.0
 
@@ -605,25 +631,39 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         self.texture.release()
         shader.release()
         helper = None
+        del (vao_lock)
 
-        # # Draw Grid
-        # shader = self.shaders["simpleC"]
-        # helper = self.shader_sources["simpleC"]
-        # shader.bind()
-        # self.buffers[ "grid.vbo" ].bind()
-        #
-        # transform.setToIdentity()
-        #
-        # mvp = pv * transform
-        #
-        # shader.setUniformValue( helper.vtx_unis[ "u_mvp" ], mvp )
-        # shader.setUniformValue( helper.vtx_unis[ "u_colour" ], 1.0, 1.0, 1.0 )
-        #
-        # #self.f.glDrawArrays( GL.GL_POINTS, self.buffers[ "grid.ibo.in" ], self.buffers[ "grid.ibo.idxs" ] )
-        #
-        # # Done Grid
-        # self.buffers[ "grid.vbo" ].release()
-        # shader.release()
+        # Draw Grid
+        vao_lock = QtGui.QOpenGLVertexArrayObject.Binder( self.vaos[ "grid" ] )
+        shader = self.shaders["simpleC"]
+        helper = self.shader_sources["simpleC"]
+        shader.bind()
+        self.buffers[ "grid.vbo" ].bind()
+
+        transform = QtGui.QMatrix4x4()
+        transform.setToIdentity()
+
+        mvp = pv * transform
+
+        shader.setUniformValue( helper.vtx_unis[ "u_mvp" ], mvp )
+        shader.setUniformValue( helper.vtx_unis[ "u_colour" ], 1.0, 1.0, 1.0 )
+
+        # draw grid
+        ptr = VoidPtr( self.buffers[ "grid.ibo.in" ] )
+        num_idx = self.buffers[ "grid.ibo.idxs" ]
+        self.f.glDrawElements( GL.GL_LINES, num_idx, GL.GL_UNSIGNED_INT, ptr )
+
+        # draw outline
+        for os, num in self.buffers[ "grid.ibo.str.outline" ]:
+            pass
+
+        # highlight majors
+        for os, num in self.buffers[ "grid.ibo.str.major" ]:
+            pass
+
+        # Done Grid
+        self.buffers[ "grid.vbo" ].release()
+        shader.release()
 
 
         # Done with GL
@@ -644,8 +684,33 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         self.aspect = float( self.wh[ 0 ] ) / float( self.wh[ 1 ] )
         self.camera.aspect = self.aspect
         self.f.glViewport( 0, 0, self.wh[ 0 ], self.wh[ 1 ] )
-    
-    
+
+    def genCubeX( self, xs, ys, zs, sz=20.0, scale=40.0 ):
+        transforms = []
+        for i in range( xs ):
+            y_rot = (self.rot/11.0) + (i*6.0)
+            for j in range( ys ):
+                for k in range( zs ):
+                    x = (i-5) * 4.5
+                    y = (j-2) * 4.5
+                    z = (-1-k) * 4.5
+
+                    x *= scale
+                    y *= scale
+                    z *= scale
+
+                    transform = QtGui.QMatrix4x4()
+                    transform.translate( x, y, z )
+                    transform.rotate( self.rot, 1.0, 0.0, 0.0 ) # ang, axis
+                    transform.rotate( y_rot, 0.0, 1.0, 0.0 )
+                    transform.rotate( i+j+k, 0.0, 0.0, 1.0 )
+                    transform.scale( sz )
+
+                    transforms.append( transform )
+
+        return transforms
+
+
 if( __name__ == "__main__" ):
     app = QtWidgets.QApplication( sys.argv )
 
