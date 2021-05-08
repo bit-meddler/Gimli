@@ -28,7 +28,7 @@ class OGLWindow( QtWidgets.QWidget ):
         self.setWindowTitle( "Testing OpenGL" )
 
         self.glWidget = GLVP()
-
+        self.glWidget.setSizePolicy( QtWidgets.QSizePolicy.MinimumExpanding, QtWidgets.QSizePolicy.MinimumExpanding )
         mainLayout = QtWidgets.QHBoxLayout()
         mainLayout.addWidget( self.glWidget )
 
@@ -49,10 +49,60 @@ class OGLWindow( QtWidgets.QWidget ):
         self.glWidget.bgcolour = colour.getRgbF()
 
 
-class LoadShaders( ShaderHelper ):
+class PackedColourTexture( ShaderHelper ):
     shader_path = os.path.join( CODE_PATH, "GUI", "Shaders" )
-    vtx_f = "simpleVCTpackMVP.vert"
+    vtx_f = "simpleVCTpack.vert"
     frg_f = "simpleCTadd.frag"
+
+
+class SimpleColour( ShaderHelper ):
+    shader_path = os.path.join( CODE_PATH, "GUI", "Shaders" )
+    vtx_f = "simpleVuC.vert"
+    frg_f = "simpleC.frag"
+
+
+def genFloorGridData( divs, size=100.0, y_height=0.0 ):
+    """ Generate a Floor plane, -1, 1 spread into divisions of size at y_height
+
+    :param divs: int or [int,int] of X,Z shape of grind
+    :param size: spacing of 'tiles' 100 = 1m, 30.5 = 1ft
+    :param y_height: hight of grid (default=0.0)
+    :return: (vtx, indxs) vertex array, index array
+    """
+    vtx_np, idx_np = None, None
+    dims = [2,2]
+    if( type( divs ) in (list, tuple) ):
+        dims[0], dims[1] = divs[0], divs[1]
+    else:
+        dims[0] = dims[1] = divs
+
+    h_x = dims[0]//2
+    h_z = dims[1]//2
+
+    # Vertexs
+    step_x = 1.0 / (h_x)
+    step_z = 1.0 / (h_z)
+
+    vtx = []
+    for z in range( dims[1] + 1 ):
+        z_point = (step_z * z) - 1.0
+        for x in range( dims[0] + 1 ):
+            vtx.append( [(step_x * x) - 1.0, 0.0, z_point] )
+
+    vtx_np = np.asarray( vtx, dtype=FLOAT_T )
+    vtx_np[:,0] *= size * h_x
+    vtx_np[:,2] *= size * h_z
+
+    # insert y_height
+    height = np.ones( vtx_np.shape[0], dtype=FLOAT_T )
+    height *= y_height
+    vtx_np[:,1] = height
+
+
+    # Indexs
+    # line in/out pairs to draw each grid, slice list for the parimiter, the major axis
+
+    return (vtx_np, idx_np)
 
 
 class NavCam( object ):
@@ -111,10 +161,15 @@ class GLVP( QtWidgets.QOpenGLWidget ):
 
         # OpenGL setup
         self.bgcolour = self.DEFAULT_BG
-        self._sinfo = LoadShaders()
-
-        self.shader_pg = None # Shader Program
+        self.buffers = {}
+        self.shaders = {}
         self.f = None # glFunctions
+
+        # Shader registry
+        self.shader_sources = {
+            "packedCT" : PackedColourTexture(),
+#            "simpleC"  : SimpleColour(),
+        }
 
         # canvas size
         self.wh = ( self.geometry().width(), self.geometry().height() )
@@ -131,6 +186,19 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         # ticks for redraws / updates
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect( self.update )
+
+    def _confBuffer( self, kind, pattern, data=None ):
+
+        gl_buf = QtGui.QOpenGLBuffer( kind )
+        gl_buf.create()
+        gl_buf.setUsagePattern( pattern )
+
+        if( data is not None ):
+            gl_buf.bind()
+            gl_buf.allocate( data.tobytes(), data.nbytes )
+            gl_buf.release()
+
+        return gl_buf
 
     def _prepareResources( self ):
         #        positions         colors          texture coords
@@ -175,10 +243,11 @@ class GLVP( QtWidgets.QOpenGLWidget ):
             20, 21, 22, 22, 23, 20,
         ]
 
-        self.indices = np.array( indices, dtype=np.uint )
+        indices = np.array( indices, dtype=np.uint )
 
-        self.num_idx = len( indices )
-        self.first_idx = 0
+
+        # Generate a Floor Grid
+        floor_vtx, floor_idx = genFloorGridData( 4, 100.0 )
 
         # Generate OGL Buffers
 
@@ -187,25 +256,25 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         self.vao.create()
         vao_lock = QtGui.QOpenGLVertexArrayObject.Binder( self.vao )
 
-        # Vertex Data VBO
-        self.vbo = QtGui.QOpenGLBuffer( QtGui.QOpenGLBuffer.VertexBuffer )
-        self.vbo.create()
-        self.vbo.setUsagePattern( QtGui.QOpenGLBuffer.StaticDraw )
+        # Cube Data
+        self.buffers["cube.vbo"] = self._confBuffer( QtGui.QOpenGLBuffer.VertexBuffer,
+                                                     QtGui.QOpenGLBuffer.StaticDraw,
+                                                     data=obj )
+        self.buffers["cube.ibo"] = self._confBuffer( QtGui.QOpenGLBuffer.IndexBuffer,
+                                                     QtGui.QOpenGLBuffer.StaticDraw,
+                                                     data=indices )
+        self.buffers["cube.ibo.in"] = 0
+        self.buffers["cube.ibo.idxs"] = len( indices )
 
-        # Load VBO
-        self.vbo.bind()
-        self.vbo.allocate( obj.tobytes(), obj.nbytes )
-        self.vbo.release()
-
-        # Index Buffer
-        self.ibo = QtGui.QOpenGLBuffer( QtGui.QOpenGLBuffer.IndexBuffer )
-        self.ibo.create()
-        self.ibo.setUsagePattern( QtGui.QOpenGLBuffer.StaticDraw )
-
-        # Load IBO
-        self.ibo.bind()
-        self.ibo.allocate( self.indices.tobytes(), self.indices.nbytes )
-        self.ibo.release()
+        # Grid Data
+        self.buffers[ "grid.vbo" ] = self._confBuffer( QtGui.QOpenGLBuffer.VertexBuffer,
+                                                       QtGui.QOpenGLBuffer.StaticDraw,
+                                                       data=floor_vtx )
+        self.buffers[ "grid.ibo" ] = self._confBuffer( QtGui.QOpenGLBuffer.IndexBuffer,
+                                                       QtGui.QOpenGLBuffer.StaticDraw,
+                                                       data=floor_idx )
+        self.buffers[ "grid.ibo.in" ] = 0
+        self.buffers[ "grid.ibo.idxs" ] = len( floor_vtx ) #<-----------
 
         # Load Texture Image
         img = cv2.imread( "wood.jpg", cv2.IMREAD_COLOR )
@@ -231,33 +300,40 @@ class GLVP( QtWidgets.QOpenGLWidget ):
     # Generic GL Config --------------------------------------------------------
     def _configureShaders( self ):
 
-        self.shader_pg = QtGui.QOpenGLShaderProgram( self.context() )
+        for sname, helper in self.shader_sources.items():
 
-        self.shader_pg.addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, self._sinfo.vtx_src  )
-        self.shader_pg.addShaderFromSourceCode( QtGui.QOpenGLShader.Fragment, self._sinfo.frg_src )
+            self.shaders[ sname ] = QtGui.QOpenGLShaderProgram( self.context() )
 
-        # Bind attrs
-        for name, location in self._sinfo.attr_locs.items():
-            self.shader_pg.bindAttributeLocation( name, location )
+            self.shaders[ sname ].addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, helper.vtx_src  )
+            self.shaders[ sname ].addShaderFromSourceCode( QtGui.QOpenGLShader.Fragment, helper.frg_src )
 
-        # Link Shader
-        is_linked = self.shader_pg.link()
-        if( not is_linked ):
-            print( "Error linking shader!" )
+            # Bind attrs
+            for aname, location in helper.attr_locs.items():
+                self.shaders[ sname ].bindAttributeLocation( aname, location )
 
-        # Locate uniforms
-        for uniform, data in self._sinfo.vtx_uniforms.items():
-            location = self.shader_pg.uniformLocation( uniform )
-            self._sinfo.vtx_unis[ uniform ] = location
-            print( "Vtx uniform '{}' ({}{}) bound @ {}".format(
-                   uniform, data[ "type"  ], data[ "shape" ], location )
-            )
+            # Link Shader
+            is_linked = self.shaders[ sname ].link()
+            if( not is_linked ):
+                print( "Error linking shader!" )
 
-    def _configureVertexAttribs( self ):
-        vao_lock = QtGui.QOpenGLVertexArrayObject.Binder( self.vao )
-        self.vbo.bind()
-        for name, num, offset in self._sinfo.layout:
-            location = self._sinfo.attr_locs[ name ]
+            # Locate uniforms
+            for uniform, data in helper.vtx_uniforms.items():
+                location = self.shaders[ sname ].uniformLocation( uniform )
+                helper.vtx_unis[ uniform ] = location
+                print( "Vtx uniform '{}' ({}{}) bound @ {}".format(
+                       uniform, data[ "type"  ], data[ "shape" ], location )
+                )
+
+    def _configureAttribBindings( self ):
+        self._configureVertexAttribs( self.vao, self.buffers[ "cube.vbo" ], self.shader_sources["packedCT"] )
+        #self._configureVertexAttribs( self.vao, self.buffers[ "grid.vbo" ], self.shader_sources["simpleC"] )
+
+
+    def _configureVertexAttribs( self, vao, buffer, shader_info ):
+        vao_lock = QtGui.QOpenGLVertexArrayObject.Binder( vao )
+        buffer.bind()
+        for name, num, offset in shader_info.layout:
+            location = shader_info.attr_locs[ name ]
             print( "Setting VAP on '{}' @ {} with {} elems from {}b".format(
                 name, location, num, offset )
             )
@@ -267,9 +343,9 @@ class GLVP( QtWidgets.QOpenGLWidget ):
                                            num,
                                            GL.GL_FLOAT,
                                            GL.GL_FALSE,
-                                           self._sinfo.line_size,
+                                           shader_info.line_size,
                                            os_ptr )
-        self.vbo.release()
+        buffer.release()
         del( vao_lock )
 
     def getGlInfo( self, show_ext=False ):
@@ -303,13 +379,14 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         print( "Clean Close" )
         self.context().makeCurrent()
 
-        self.vbo.destroy()
-        self.ibo.destroy()
+        for buff in self.buffers.values():
+            buff.destroy()
+
         self.texture.destroy()
         self.vao.destroy()
 
-        del( self.shader_pg )
-        self.shader_pg = None
+        for shader in self.shaders.items():
+            del( shader )
 
         self.doneCurrent()
 
@@ -428,7 +505,7 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         self._prepareResources()
 
         # Attrs
-        self._configureVertexAttribs()
+        self._configureAttribBindings()
 
         # misc
         self.f.glClearColor( *self.bgcolour )
@@ -470,11 +547,14 @@ class GLVP( QtWidgets.QOpenGLWidget ):
 
         # attach VAO
         vao_lock = QtGui.QOpenGLVertexArrayObject.Binder( self.vao )
-        self.shader_pg.bind()
 
-        # ??? am I supposed to bind these guys here?
-        self.vbo.bind()
-        self.ibo.bind()
+        # Cube Drawing
+        shader = self.shaders["packedCT"]
+        helper = self.shader_sources["packedCT"]
+        shader.bind()
+
+        self.buffers["cube.vbo"].bind()
+        self.buffers["cube.ibo"].bind()
         self.texture.bind()
 
         # Move the Cube
@@ -482,14 +562,16 @@ class GLVP( QtWidgets.QOpenGLWidget ):
 
         # start drawing
         self.f.glClear( GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT )
-        ptr = VoidPtr( self.first_idx )
 
         # Update View / Projection mats
-        self.shader_pg.setUniformValue( self._sinfo.vtx_unis[ "u_view" ], self.camera.view )
-        self.shader_pg.setUniformValue( self._sinfo.vtx_unis[ "u_projection" ], self.camera.proj )
+        pv = self.camera.proj * self.camera.view
+
+        # striding data
+        ptr = VoidPtr( self.buffers[ "cube.ibo.in" ] )
+        num_idx = self.buffers[ "cube.ibo.idxs" ]
 
         # Draw a field of cubes
-        scale = 25.0
+        scale = 30.5
         for i in range( 10 ):
             y_rot = (self.rot/11.0) + (i*6.0)
             for j in range( 10 ):
@@ -507,19 +589,44 @@ class GLVP( QtWidgets.QOpenGLWidget ):
                     transform.rotate( self.rot, 1.0, 0.0, 0.0 ) # ang, axis
                     transform.rotate( y_rot, 0.0, 1.0, 0.0 )
                     transform.rotate( i+j+k, 0.0, 0.0, 1.0 )
-                    transform.scale( 12.0 )
+                    transform.scale( 18.0 )
 
-                    self.shader_pg.setUniformValue( self._sinfo.vtx_unis[ "u_model" ], transform )
+                    mvp = pv * transform
 
-                    self.f.glDrawElements( GL.GL_TRIANGLES, self.num_idx, GL.GL_UNSIGNED_INT, ptr )
+                    shader.setUniformValue( helper.vtx_unis[ "u_mvp" ], mvp )
+
+                    self.f.glDrawElements( GL.GL_TRIANGLES, num_idx, GL.GL_UNSIGNED_INT, ptr )
 
         self.rot += 1.0
 
-        # Done GL
-        self.vbo.release()
-        self.ibo.release()
+        # Done Cubes
+        self.buffers["cube.vbo"].release()
+        self.buffers["cube.ibo"].release()
         self.texture.release()
-        self.shader_pg.release()
+        shader.release()
+        helper = None
+
+        # # Draw Grid
+        # shader = self.shaders["simpleC"]
+        # helper = self.shader_sources["simpleC"]
+        # shader.bind()
+        # self.buffers[ "grid.vbo" ].bind()
+        #
+        # transform.setToIdentity()
+        #
+        # mvp = pv * transform
+        #
+        # shader.setUniformValue( helper.vtx_unis[ "u_mvp" ], mvp )
+        # shader.setUniformValue( helper.vtx_unis[ "u_colour" ], 1.0, 1.0, 1.0 )
+        #
+        # #self.f.glDrawArrays( GL.GL_POINTS, self.buffers[ "grid.ibo.in" ], self.buffers[ "grid.ibo.idxs" ] )
+        #
+        # # Done Grid
+        # self.buffers[ "grid.vbo" ].release()
+        # shader.release()
+
+
+        # Done with GL
         del( vao_lock )
         self.f.glDisable( GL.GL_DEPTH_TEST )
         painter.endNativePainting()
