@@ -129,7 +129,7 @@ def genFloorGridData( divs, size=100.0, y_height=0.0 ):
 
     majors = ( (col_offset+(h_x*col_stride), col_stride),
                (h_z*row_stride, row_stride))
-    idxs = np.asarray( rows + cols, dtype=np.uint32 )
+    idxs = np.asarray( rows + cols, dtype=GLIDX_T )
 
     # index slices
     return (vtx_np, idxs, (outline, majors))
@@ -166,15 +166,24 @@ class NavCam( object ):
         if( self.locked ):
             return
 
+        self.view.setToIdentity()
         self.view.lookAt( self.pos, self.int, self.UP )
         self.dst = self.pos.distanceToPoint( self.int )
-        print( self.dst )
 
     def updateProjection( self ):
         if (self.locked):
             return
 
+        self.proj.setToIdentity()
         self.proj.perspective( self.vFoV, self.aspect, self.nr_clip, self.fr_clip )
+
+    def setFov( self, newFov ):
+        FoV = np.clip( newFov, 1.0, 120.0 )
+        self.vFoV = FoV
+        self.updateProjection()
+
+    def changeFoV( self, delta ):
+        self.setFov( self.vFoV + delta )
 
 
 class GLVP( QtWidgets.QOpenGLWidget ):
@@ -217,6 +226,37 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         # ticks for redraws / updates
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect( self.update )
+
+    def genCubeX( self, xs, ys, zs, sz=20.0, spacing=50.0 ):
+        h_x, h_y, h_z = xs // 2, ys // 2, zs // 2
+        last_x, last_y, last_z = xs + 1, ys + 1, zs + 1
+
+        # Vertexs
+        step_x = 1.0 / (h_x)
+        step_y = 1.0 / (h_y)
+        step_z = 1.0 / (h_z)
+
+        transforms = [ ]
+        for z in range( last_z ):
+            z_pos = ((step_z * z) - 1.0) * spacing * h_z
+
+            for y in range( last_y ):
+                y_pos = ((step_y * y) - 1.0) * spacing * h_y
+                y_rot = (self.rot / 11.0) + (y * 6.0)
+
+                for x in range( last_x ):
+                    x_pos = ((step_x * x) - 1.0) * spacing * h_x
+
+                    transform = QtGui.QMatrix4x4()
+                    transform.translate( x_pos, y_pos, z_pos )
+                    transform.rotate( self.rot, 1.0, 0.0, 0.0 ) # ang, axis
+                    transform.rotate( y_rot, 0.0, 1.0, 0.0 )
+                    transform.rotate( x+y+z, 0.0, 0.0, 1.0 )
+                    transform.scale( sz )
+
+                    transforms.append( transform )
+
+        return transforms
 
     def _confBuffer( self, kind, pattern, data=None ):
 
@@ -263,7 +303,7 @@ class GLVP( QtWidgets.QOpenGLWidget ):
                 -0.5,  0.5,  0.5,  0.0, 0.0, 1.0,  1.0, 1.0,
                  0.5,  0.5,  0.5,  1.0, 1.0, 1.0,  0.0, 1.0,
         ]
-        obj = np.array( cube, dtype=np.float32 )
+        obj = np.array( cube, dtype=FLOAT_T )
 
         indices = [
              0,  1,  2,  2,  3,  0,
@@ -274,7 +314,7 @@ class GLVP( QtWidgets.QOpenGLWidget ):
             20, 21, 22, 22, 23, 20,
         ]
 
-        indices = np.array( indices, dtype=np.uint )
+        indices = np.array( indices, dtype=GLIDX_T )
 
 
         # Generate a Floor Grid
@@ -496,13 +536,17 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         if( self.nav_mode is None ):
             return
 
+        modifiers = event.modifiers()
+
         # mouse motion computations
         new_x, new_y = event.x(), event.y()
         d_x, d_y = new_x - self._last_x, new_y - self._last_y
 
+        scale = 0.5 if bool(modifiers & QtCore.Qt.ShiftModifier) else 1.2
+
         if(   self.nav_mode == "TRUCK" ):
             """ Move camera position in X and Y, move interest to match. """
-            offset = QtGui.QVector3D( d_x * 0.1, d_y * 0.1, 0.0 )
+            offset = QtGui.QVector3D( d_x * scale, d_y * scale, 0.0 )
             self.camera.pos += offset
             self.camera.int += offset
             self.camera.lookAtInterest()
@@ -515,13 +559,14 @@ class GLVP( QtWidgets.QOpenGLWidget ):
 
         elif( self.nav_mode == "DOLLY" ):
             """ Translate along the vector from camera pos to interest, move
-                interest away an equal amount.
+                interest away an equal amount?
             """
             pass
 
         elif( self.nav_mode == "ZOOM" ):
-            """ Narrow the FoV """
-            pass
+            """ Narrow / Widen the FoV the FoV """
+            delta = d_y * (scale/2) * -1.0
+            self.camera.changeFoV( delta )
 
         self._last_x, self._last_y = new_x, new_y
 
@@ -612,16 +657,16 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         ptr = VoidPtr( self.buffers[ "cube.ibo.in" ] )
         num_idx = self.buffers[ "cube.ibo.idxs" ]
 
-        # Draw a field of cubes
-        for transform in self.genCubeX( 3, 5, 3 ):
-
-            # Make ravey if above ground
-            n = 1.0 if (transform.column( 3 ).y() > 0.0) else 0.0
-            shader.setUniformValue( helper.vtx_unis[ "u_hilight" ], n  )
-
-            mvp = pv * transform
-            shader.setUniformValue( helper.vtx_unis[ "u_mvp" ], mvp )
-            self.f.glDrawElements( GL.GL_TRIANGLES, num_idx, GL.GL_UNSIGNED_INT, ptr )
+        # # Draw a field of cubes
+        # for transform in self.genCubeX( 10, 5, 6 ):
+        #
+        #     # Make ravey if above ground
+        #     n = 1.0 if (transform.column( 3 ).y() > 0.0) else 0.0
+        #     shader.setUniformValue( helper.vtx_unis[ "u_hilight" ], n  )
+        #
+        #     mvp = pv * transform
+        #     shader.setUniformValue( helper.vtx_unis[ "u_mvp" ], mvp )
+        #     self.f.glDrawElements( GL.GL_TRIANGLES, num_idx, GL.GL_UNSIGNED_INT, ptr )
 
         self.rot += 1.0
 
@@ -646,20 +691,36 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         mvp = pv * transform
 
         shader.setUniformValue( helper.vtx_unis[ "u_mvp" ], mvp )
-        shader.setUniformValue( helper.vtx_unis[ "u_colour" ], 1.0, 1.0, 1.0 )
+        shader.setUniformValue( helper.vtx_unis[ "u_colour" ], 0.8, 0.8, 0.8 )
 
         # draw grid
         ptr = VoidPtr( self.buffers[ "grid.ibo.in" ] )
         num_idx = self.buffers[ "grid.ibo.idxs" ]
-        self.f.glDrawElements( GL.GL_LINES, num_idx, GL.GL_UNSIGNED_INT, ptr )
+        self.f.glDrawArrays( GL.GL_POINTS, ptr, num_idx )
+        #self.f.glDrawElements( GL.GL_LINES, num_idx, GL.GL_UNSIGNED_INT, ptr )
 
         # draw outline
-        for os, num in self.buffers[ "grid.ibo.str.outline" ]:
-            pass
+        # shader.setUniformValue( helper.vtx_unis[ "u_colour" ], 1.0, 1.0, 1.0 )
+        # for os, num in self.buffers[ "grid.ibo.str.outline" ]:
+        #     print( os, num )
+        #     ptr = VoidPtr( os )
+        #     num_idx = num
+        #     self.f.glDrawElements( GL.GL_LINES, num_idx, GL.GL_UNSIGNED_INT, ptr )
 
         # highlight majors
-        for os, num in self.buffers[ "grid.ibo.str.major" ]:
-            pass
+        os, num = self.buffers[ "grid.ibo.str.major" ][0]
+        shader.setUniformValue( helper.vtx_unis[ "u_colour" ], 1.0, 0.0, 0.0 )
+        ptr = VoidPtr( os )
+        num_idx = num
+        self.f.glDrawArrays( GL.GL_POINTS, ptr, num_idx )
+        #self.f.glDrawElements( GL.GL_LINES, num_idx, GL.GL_UNSIGNED_INT, ptr )
+
+        os, num = self.buffers[ "grid.ibo.str.major" ][1]
+        shader.setUniformValue( helper.vtx_unis[ "u_colour" ], 0.0, 0.0, 1.0 )
+        ptr = VoidPtr( os )
+        num_idx = num
+        self.f.glDrawArrays( GL.GL_POINTS, ptr, num_idx )
+        #self.f.glDrawElements( GL.GL_LINES, num_idx, GL.GL_UNSIGNED_INT, ptr )
 
         # Done Grid
         self.buffers[ "grid.vbo" ].release()
@@ -674,7 +735,14 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         # Try drawing some text
         painter.setRenderHint( QtGui.QPainter.TextAntialiasing )
         painter.setPen( QtCore.Qt.white )
-        painter.drawText( 10, 10, "Ha Ha I'm using the Internet" )
+
+        # Camera Info
+        c = self.camera
+        text  = "Camera "
+        text += "T:{:.3f}, {:.3f}, {:.3f}".format( c.pos.x(), c.pos.y(), c.pos.z() )
+        text += "N:{:.3f}, {:.3f}, {:.3f}".format( c.int.x(), c.int.y(), c.int.z() )
+        text += "FoV:{:.3f}".format( c.vFoV )
+        painter.drawText( 10, 10, text )
 
         painter.end()
 
@@ -684,31 +752,6 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         self.aspect = float( self.wh[ 0 ] ) / float( self.wh[ 1 ] )
         self.camera.aspect = self.aspect
         self.f.glViewport( 0, 0, self.wh[ 0 ], self.wh[ 1 ] )
-
-    def genCubeX( self, xs, ys, zs, sz=20.0, scale=40.0 ):
-        transforms = []
-        for i in range( xs ):
-            y_rot = (self.rot/11.0) + (i*6.0)
-            for j in range( ys ):
-                for k in range( zs ):
-                    x = (i-5) * 4.5
-                    y = (j-2) * 4.5
-                    z = (-1-k) * 4.5
-
-                    x *= scale
-                    y *= scale
-                    z *= scale
-
-                    transform = QtGui.QMatrix4x4()
-                    transform.translate( x, y, z )
-                    transform.rotate( self.rot, 1.0, 0.0, 0.0 ) # ang, axis
-                    transform.rotate( y_rot, 0.0, 1.0, 0.0 )
-                    transform.rotate( i+j+k, 0.0, 0.0, 1.0 )
-                    transform.scale( sz )
-
-                    transforms.append( transform )
-
-        return transforms
 
 
 if( __name__ == "__main__" ):

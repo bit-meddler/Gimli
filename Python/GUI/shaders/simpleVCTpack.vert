@@ -12,6 +12,7 @@ uniform float u_hilight ;
 
 void main() {
     gl_Position = u_mvp * vec4( a_position, 1.0f ) ;
+
     if( u_hilight > 0.0f ) {
         v_colour = a_colour ;
     } else {

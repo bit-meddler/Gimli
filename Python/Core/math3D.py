@@ -4,6 +4,7 @@ import numpy as np
 # Types
 FLOAT_T = np.float32
 ID_T    = np.int32
+GLIDX_T = np.uint32
 
 # Consts
 TWO_PI = 2.0 * np.pi
