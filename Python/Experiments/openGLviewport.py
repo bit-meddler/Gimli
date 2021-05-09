@@ -150,6 +150,11 @@ class NavCam( object ):
         self.int = QtGui.QVector3D( 0.0, 0.0, 0.0 ) # Compute from above?
         self.dst = 0.0 # Distance to interest
 
+        # Navigation Representation
+        self.fwd = QtGui.QVector3D( 0.0, 0.0, -1.0 )  # Camera Forward Vector
+        self.cup = QtGui.QVector3D( 0.0, 1.0,  0.0 )  # Camera up
+        self.rgt = QtGui.QVector3D( 1.0, 0.0,  0.0 )  # Right Vector
+
         # camera intrinsics
         self.vFoV   = 90.0  # Generic
         self.aspect = 1.777 # 16:9
@@ -184,6 +189,36 @@ class NavCam( object ):
 
     def changeFoV( self, delta ):
         self.setFov( self.vFoV + delta )
+
+    def dolly( self, delta ):
+        # Clamp any changes to stop going through the interest
+        direction = self.pos - self.int
+        direction.normalize()
+        direction *= delta
+        new = self.pos + direction
+
+        test = QtGui.QMatrix4x4()
+        test.lookAt( new, self.int, self.UP )
+        dst = new.distanceToPoint( self.int )
+        if( dst < 0.1 ):
+            # Too close
+            return
+
+        self.pos = new
+        self.lookAtInterest()
+
+    def compuuteLookAt( self, eye, target, up ):
+        Z = eye - target
+        Z.normalise()
+
+        # Right axis vector
+        X = QtGui.QVector3D.crossProduct( up.normalized(), Z )
+        X.normalise()
+
+        # Camera Up
+        Y = QtGui.QVector3D.crossProduct( zaxis, xaxis )
+        Y.normalise()
+
 
 
 class GLVP( QtWidgets.QOpenGLWidget ):
@@ -544,28 +579,39 @@ class GLVP( QtWidgets.QOpenGLWidget ):
 
         scale = 0.5 if bool(modifiers & QtCore.Qt.ShiftModifier) else 1.2
 
+        s_x, s_y = d_x * scale, d_y * scale
+
         if(   self.nav_mode == "TRUCK" ):
             """ Move camera position in X and Y, move interest to match. """
-            offset = QtGui.QVector3D( d_x * scale, d_y * scale, 0.0 )
+            offset = QtGui.QVector3D( s_x * -1.0, s_y, 0.0 )
             self.camera.pos += offset
             self.camera.int += offset
             self.camera.lookAtInterest()
 
         elif( self.nav_mode == "TUMBLE" ):
-            """ Arc Ball interaction? move camera position around surface of ball
+            """ Move camera position around surface of a ball
                 centred at interest, with r being interest distance.
             """
-            pass
+            print( self.camera.pos )
+            offset = QtGui.QVector3D( s_x, s_y, 0.0 )
+            new = self.camera.pos + offset
+            direction = self.camera.int - new
+            direction.normalize()
+            direction *= self.camera.dst
+            self.camera.pos = direction
+            print( self.camera.pos )
+            self.camera.lookAtInterest()
 
         elif( self.nav_mode == "DOLLY" ):
-            """ Translate along the vector from camera pos to interest, move
-                interest away an equal amount?
+            """ Translate along the vector from camera pos to interest. 
+                TODO: Prevent pos moving through interest.
             """
-            pass
+            self.camera.dolly( s_x )
+
 
         elif( self.nav_mode == "ZOOM" ):
             """ Narrow / Widen the FoV the FoV """
-            delta = d_y * (scale/2) * -1.0
+            delta = (s_y/2.0) * -1.0
             self.camera.changeFoV( delta )
 
         self._last_x, self._last_y = new_x, new_y
