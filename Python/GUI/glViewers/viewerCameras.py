@@ -18,62 +18,8 @@ from GUI import getStdIcon, Nodes, ROLE_INTERNAL_ID, ROLE_NUMROIDS, ROLE_TYPEINF
 SQUARES = [ x ** 2 for x in range( 9 ) ]
 
 class Shaders( object ):
-    """
-    Conveniane to hold Shaders used in the cameraviewer.
-    ToDo: Something more elegant for this when the shaders are working properly.
-    """
-    dot_vtx_src = """
-    # version 330 core
-
-    layout( location=0 ) in vec3 a_position ;
-    layout( location=1 ) in int  a_id ;
-    
-    uniform mat4 u_projection ;
-    
-    out vec3 v_colour ;
-    
-    void main() {
-        gl_Position  = u_projection * vec4( a_position.x, a_position.y, 0.0, 1.0 ) ;
-        gl_PointSize = a_position.z * 2.0 ;
-        if( a_id < 0 ) {
-            v_colour = vec3( 1.0, 1.0, 1.0 ) ;
-        } else {
-            v_colour = vec3( 0.0, 1.0, 0.0 ) ;
-        }
-    }
-    """
-    # ISSUE #9
-    dot_vtx2_src = """
-    # version 330 core
-
-    layout( location=0 ) in vec3 a_position ;
-    layout( location=1 ) in int  a_id ;
-    
-    uniform mat4 u_projection ;
-    
-    // colour tables
-    uniform vec3 u_cols[{num_cols}] ;
-    uniform vec3 u_sids[{num_sids}] ;
-    
-    out vec3 v_colour ;
-    
-    void main() {{
-        gl_Position  = u_projection * vec4( a_position.x, a_position.y, 0.0, 1.0 ) ;
-        gl_PointSize = a_position.z * 2.0 ;
-        if( a_id < 0 ) {{
-            // frozen or a sid
-            if( a_id <= {sid_bound} ) {{
-                v_colour = u_sids[ abs( a_id + {sid_conv} ) ] ;
-            }} else {{
-                v_colour = vec3( 0.0, 0.0, 1.0 ) ;
-            }}
-        }} else {{
-            v_colour = u_cols[ a_id ] ;
-        }}
-    }}
-    """ # It's supposed to work like this...
-
-    dot_vtx_src3 = """
+    # camDotshardcoded
+    dot_vtx3_src = """
     # version 330 core
 
     layout( location=0 ) in vec3 a_position ;
@@ -135,76 +81,6 @@ class Shaders( object ):
         color = vec4( v_colour, 1.0 ) ;
     }
     """
-    # ISSUE #8
-    dot_geo_src = """
-    #version 330 core
-
-    layout (points) in ;
-    layout (line_strip, max_vertices = 12) out;
-
-    void circle( vec4 position, float radius ) {
-        gl_Position = position + (vec4(1.0, 0.0, 0.0, 0.0) * radius) ;
-        EmitVertex() ;
-        gl_Position = position + (vec4(0.8660254037844387, 0.49999999999999994, 0.0, 0.0) * radius) ;
-        EmitVertex() ;
-        gl_Position = position + (vec4(0.5000000000000001, 0.8660254037844386, 0.0, 0.0) * radius) ;
-        EmitVertex() ;
-        gl_Position = position + (vec4(0.0, 1.0, 0.0, 0.0) * radius) ;
-        EmitVertex() ;
-        gl_Position = position + (vec4(-0.4999999999999998, 0.8660254037844387, 0.0, 0.0) * radius) ;
-        EmitVertex() ;
-        gl_Position = position + (vec4(-0.8660254037844385, 0.5000000000000003, 0.0, 0.0) * radius) ;
-        EmitVertex() ;
-        gl_Position = position + (vec4(-1.0, 0.0, 0.0, 0.0) * radius) ;
-        EmitVertex() ;
-        gl_Position = position + (vec4(-0.8660254037844388, -0.4999999999999997, 0.0, 0.0) * radius) ;
-        EmitVertex() ;
-        gl_Position = position + (vec4(-0.5000000000000004, -0.8660254037844385, 0.0, 0.0) * radius) ;
-        EmitVertex() ;
-        gl_Position = position + (vec4(0.0, -1.0, 0.0, 0.0) * radius) ;
-        EmitVertex() ;
-        gl_Position = position + (vec4(0.49999999999999933, -0.866025403784439, 0.0, 0.0) * radius) ;
-        EmitVertex() ;
-        gl_Position = position + (vec4(0.8660254037844384, -0.5000000000000004, 0.0, 0.0) * radius) ;
-        EmitVertex() ;
-        EndPrimitive() ;
-    }
-
-    void main() {
-        circle( gl_in.gl_Position, gl_PointSize ) ;
-    }
-    """
-    @staticmethod
-    def genGeoSdr( divisions=12 ):
-        # ISSUE #8
-        ret = """
-    #version 330 core
-    
-    layout (points) in ;
-    layout (line_strip, max_vertices = {}) out;
-    
-    void circle( vec4 position, float radius ) {{
-        """.format( divisions )
-
-        step = TWO_PI / divisions
-        for i in range( divisions ):
-            x = np.cos( i * step )
-            y = np.sin( i * step )
-            x = 0.0 if np.abs(x) < 1.0e-8 else x
-            y = 0.0 if np.abs(y) < 1.0e-8 else y
-            ret += """gl_Position = position + (vec4({x:.5f}, {y:.5f}, 0.0, 0.0) * radius) ;
-        EmitVertex() ;
-        """.format( x=x, y=y )
-
-        ret += """EndPrimitive() ;
-    }
-    
-    void main() {    
-        circle( gl_in[0].gl_Position, gl_in[0].gl_PointSize ) ;
-    }  
-    """
-
-        return ret
 
 
 class QGLCameraPane( QtWidgets.QOpenGLWidget ):
@@ -225,7 +101,7 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
     DEFAULT_ZOOM  = 1.075
 
     def __init__(self, parent=None ):
-        super(QGLCameraPane, self).__init__( parent )
+        super( QGLCameraPane, self ).__init__( parent )
 
         # Setup the Canvas / Format
         format = QtGui.QSurfaceFormat.defaultFormat()
@@ -326,14 +202,15 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
 
         # ISSUE #9
         # compose the shader program
-        dot_vtx_src = Shaders.dot_vtx2_src.format( num_cols=len( self._cols_ids ),
-                                                   num_sids=len( self._cols_sid ), sid_bound=lid.SID_BASE+1, sid_conv=lid.SID_CONV )
+        # dot_vtx_src = Shaders.dot_vtx2_src.format( num_cols=len( self._cols_ids ),
+        #                                            num_sids=len( self._cols_sid ),
+        #                                            sid_bound=lid.SID_BASE+1,
+        #                                            sid_conv=lid.SID_CONV )
 
         # Setup Dot shader
         self.shader = QtGui.QOpenGLShaderProgram( self.context() )
 
-        #add_ok = self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, dot_vtx_src )
-        add_ok = self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, Shaders.dot_vtx_src3  )
+        add_ok = self.shader.addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, Shaders.dot_vtx3_src  )
         if (not add_ok):
             print( "Add Error", self.shader.log() )
             exit()
@@ -383,13 +260,13 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
 
         # ISSUE #9
         # set up colour uniforms
-        self._cols_loc = self.shader.uniformLocation( "u_cols[0]" )
-        self._sids_loc = self.shader.uniformLocation( "u_sids[0]" )
+        #self._cols_loc = self.shader.uniformLocation( "u_cols[0]" )
+        #self._sids_loc = self.shader.uniformLocation( "u_sids[0]" )
 
         # ISSUE #9
         # load colour uniforms
-        print( self._cols_ids )
-        print( self._cols_sid )
+        #print( self._cols_ids )
+        #print( self._cols_sid )
         #GL.glUniform3fv( self._cols_loc, len( self._cols_ids ), self._cols_ids )
         #GL.glUniform3fv( self._sids_loc, len( self._cols_sid ), self._cols_sid )
 

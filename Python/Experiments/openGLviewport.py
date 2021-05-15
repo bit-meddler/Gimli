@@ -286,6 +286,9 @@ class GLVP( QtWidgets.QOpenGLWidget ):
             "simpleC"  : SimpleColour(),
         }
 
+        for shader in self.shader_sources.values():
+            shader.compose()
+
         # canvas size
         self.wh = ( self.geometry().width(), self.geometry().height() )
         self.aspect = float(self.wh[0]) / float(self.wh[1])
@@ -347,6 +350,35 @@ class GLVP( QtWidgets.QOpenGLWidget ):
             gl_buf.release()
 
         return gl_buf
+
+    def loadImage( self, image_fq ):
+        """ Use OpenCV to load an image
+
+        :param image_fq: (string) fully qualified path to the image
+        :return: (ndarray) the image in CV2 format
+
+        WARNING: Inexplicably, you cannot load the image and convert to a QImage in a single function!!!
+        """
+        img = cv2.imread( image_fq, cv2.IMREAD_COLOR )
+        return img
+
+    def cv2Q( self, cv_img ):
+        rgb_img = cv2.cvtColor( cv_img, cv2.COLOR_BGR2RGB )
+        img_h, img_w, img_ch = rgb_img.shape
+        q_img = QtGui.QImage( rgb_img.data, img_w, img_h, (img_ch * img_w), QtGui.QImage.Format_RGB888 )
+        return q_img
+
+    def bindTexture( self, image, filter_min, filter_mag, blend_s, blend_t ):
+        # Create Texture
+        target = QtGui.QOpenGLTexture( QtGui.QOpenGLTexture.Target2D ) # Target2D === GL_TEXTURE_2D
+        target.create()
+        target.bind()
+        target.setData( image )
+        target.setMinMagFilters( filter_min, filter_mag )
+        target.setWrapMode( QtGui.QOpenGLTexture.DirectionS, blend_s )
+        target.setWrapMode( QtGui.QOpenGLTexture.DirectionT, blend_t )
+        target.release()
+        return target
 
     def _prepareResources( self ):
         #        positions         colors          texture coords
@@ -416,23 +448,13 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         self.buffers["cube.ibo.idxs"] = len( indices )
 
         # Load Texture Image
-        img = cv2.imread( "wood.jpg", cv2.IMREAD_COLOR )
-        rgb_img = cv2.cvtColor( img, cv2.COLOR_BGR2RGB )
-        i_h, i_w, _ = rgb_img.shape
-
-        # convert cv2 Image to QImage
-        q_img = QtGui.QImage( rgb_img.data, i_w, i_h, (3 * i_w), QtGui.QImage.Format_RGB888 )
+        image_fq = "wood.jpg"
+        img = self.loadImage( image_fq )
+        q_img = self.cv2Q( img )
 
         # Create Texture
-        self.texture = QtGui.QOpenGLTexture( QtGui.QOpenGLTexture.Target2D ) # Target2D === GL_TEXTURE_2D
-        self.texture.create()
-        self.texture.bind()
-        self.texture.setData( q_img )
-        self.texture.setMinMagFilters( QtGui.QOpenGLTexture.Linear, QtGui.QOpenGLTexture.Linear )
-        self.texture.setWrapMode( QtGui.QOpenGLTexture.DirectionS, QtGui.QOpenGLTexture.ClampToEdge )
-        self.texture.setWrapMode( QtGui.QOpenGLTexture.DirectionT, QtGui.QOpenGLTexture.ClampToEdge )
-        self.texture.release()
-
+        self.texture = self.bindTexture( q_img, QtGui.QOpenGLTexture.Linear, QtGui.QOpenGLTexture.Linear,
+                                         QtGui.QOpenGLTexture.ClampToEdge, QtGui.QOpenGLTexture.ClampToEdge )
         # Release the VAO Mutex Binder
         del( vao_lock )
 
@@ -554,6 +576,16 @@ class GLVP( QtWidgets.QOpenGLWidget ):
 
         self.doneCurrent()
 
+    def initalizeApp( self ):
+        # Setup Camera
+        self.camera.lookAtInterest()
+        self.camera.updateProjection()
+
+        # Start auto updates
+        self.timer.start( 16 )  # approx 60fps
+
+        self.configured = True
+
     # Navigation funcs ---------------------------------------------------------
     def _beginNav( self, mode ):
         """ begin or change a navigation interaction """
@@ -649,7 +681,6 @@ class GLVP( QtWidgets.QOpenGLWidget ):
     def sizeHint( self ):
         return QtCore.QSize( 400, 400 )
 
-
     # gl funs ------------------------------------------------------------------
     def initializeGL( self ):
         super( GLVP, self ).initializeGL()
@@ -684,14 +715,7 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         self.f.glEnable( GL.GL_POINT_SMOOTH )
         self.f.glHint( GL.GL_POINT_SMOOTH_HINT, GL.GL_NICEST )
 
-        # Setup Camera
-        self.camera.lookAtInterest()
-        self.camera.updateProjection()
-
-        # Start auto updates
-        self.timer.start( 16 )  # approx 60fps
-
-        self.configured = True
+        self.initalizeApp()
 
     def paintGL( self ):
         # guard against early drawing
@@ -730,16 +754,16 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         ptr = VoidPtr( self.buffers[ "cube.ibo.in" ] )
         num_idx = self.buffers[ "cube.ibo.idxs" ]
 
-        # # Draw a field of cubes
-        # for transform in self.genCubeX( 10, 5, 6 ):
-        #
-        #     # Make ravey if above ground
-        #     n = 1.0 if (transform.column( 3 ).y() > 0.0) else 0.0
-        #     shader.setUniformValue( helper.vtx_unis[ "u_hilight" ], n  )
-        #
-        #     mvp = pv * transform
-        #     shader.setUniformValue( helper.vtx_unis[ "u_mvp" ], mvp )
-        #     self.f.glDrawElements( GL.GL_TRIANGLES, num_idx, GL.GL_UNSIGNED_INT, ptr )
+        # Draw a field of cubes
+        for transform in self.genCubeX( 10, 5, 6 ):
+
+            # Make ravey if above ground
+            n = 1.0 if (transform.column( 3 ).y() > 0.0) else 0.0
+            shader.setUniformValue( helper.vtx_unis[ "u_hilight" ], n  )
+
+            mvp = pv * transform
+            shader.setUniformValue( helper.vtx_unis[ "u_mvp" ], mvp )
+            self.f.glDrawElements( GL.GL_TRIANGLES, num_idx, GL.GL_UNSIGNED_INT, ptr )
 
         self.rot += 1.0
 

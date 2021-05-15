@@ -16,6 +16,9 @@ class ShaderHelper( object ):
     frg_f = None
     geo_f = None
 
+    # Dynamic Shaders
+    vtx_info = None
+
     LAYOUT_RE = r".*(?:layout)" + \
                 r"(?:\(\s*location\s*=\s*(?P<location>\d)\s*\))?" + \
                 r"\s+(?P<specifier>\w+)" + \
@@ -34,6 +37,13 @@ class ShaderHelper( object ):
     MAIN_MATCH    = re.compile( MAIN_RE )
 
     def __init__( self ):
+        pass
+
+    def compose( self ):
+        """
+        Scan the attached shaders for layout and uniform info.  if a Dynamic shader
+        is present it is updated with the vtx_info dict
+        """
         # Attempt to load files
         for file_name in ( self.vtx_f, self.frg_f, self.geo_f, ):
             if( file_name is None ):
@@ -67,6 +77,10 @@ class ShaderHelper( object ):
 
                 # elif( file_name.endswith(".comp") ):
                 #     self.unimp = program
+
+        # if there is an "info" Dict, format the source with it
+        if( self.vtx_info is not None ):
+            self.vtx_src = self.vtx_src.format( **self.vtx_info )
 
         # Examine the Vertex Shader's attributes
         attr_data = []
