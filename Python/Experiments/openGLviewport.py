@@ -138,16 +138,18 @@ def genFloorGridData( divs, size=100.0, y_height=0.0 ):
 class NavCam( object ):
 
     UP = QtGui.QVector3D( 0.0, 1.0, 0.0 )
+    DEFAULT_POS = QtGui.QVector3D( 200.0, 180.0, 200.0 )
+    DEFAULT_INT = QtGui.QVector3D( 0.0, 0.0, 0.0 )
 
     def __init__( self ):
         # locked camera
         self.locked = False
 
         # Camera extrinsics
-        self.pos = QtGui.QVector3D( 0.0, 180.0, 200.0 ) #
+        self.pos = self.DEFAULT_POS
+        self.int = self.DEFAULT_INT
 
         self.rot = QtGui.QVector3D( 0.0, 0.0, 0.0 ) # Roll, Pitch, Yaw
-        self.int = QtGui.QVector3D( 0.0, 0.0, 0.0 ) # Compute from above?
         self.dst = 0.0 # Distance to interest
 
         # Navigation Representation
@@ -162,6 +164,7 @@ class NavCam( object ):
         # GL Darwing
         self.nr_clip = 0.1
         self.fr_clip = 10000.0
+        self.port    = [ 1920, 1080 ] # Viewport dimensions
 
         # GL Matrixes
         self.view = QtGui.QMatrix4x4()
@@ -190,8 +193,25 @@ class NavCam( object ):
     def changeFoV( self, delta ):
         self.setFov( self.vFoV + delta )
 
+    def changePort( self, width, height ):
+        self.port = [ width, height ]
+        self.aspect = float( self.port[ 0 ] ) / float( self.port[ 1 ] )
+
+    def truck( self, d_x, d_y ):
+        """ Translate the view Left/Right and Up/Down
+
+        :param d_x: (float) change in x
+        :param d_y: (float) change in y
+        """
+        offset = QtGui.QVector3D( d_x, d_y, 0.0 )
+        self.pos += offset
+        self.int += offset
+        self.lookAtInterest()
+
     def dolly( self, delta ):
-        # Clamp any changes to stop going through the interest
+        """ Translate along the vector from camera pos to interest.
+        :param delta (float) amount to move in or out
+        """
         direction = self.pos - self.int
         direction.normalize()
         direction *= delta
@@ -207,16 +227,36 @@ class NavCam( object ):
         self.pos = new
         self.lookAtInterest()
 
-    def compuuteLookAt( self, eye, target, up ):
-        Z = eye - target
+    def tumble( self, d_x, d_y ):
+        """ Move camera position around surface of a ball centred at the interest,
+            Maintain the radius (self.dst)
+
+        """
+        offset = QtGui.QVector3D( d_x, d_y, 0.0 )
+        new = self.pos + offset
+        direction = self.int - new
+        direction.normalize()
+        direction *= self.dst * -1.0
+        self.pos = direction
+        self.lookAtInterest()
+
+    def resetView( self ):
+        """ Reset to default view position """
+        self.int = self.DEFAULT_INT
+        self.pos = self.DEFAULT_POS
+        self.lookAtInterest()
+
+    def compuuteLookAt( self, eye_pos, tgt_pos, up ):
+        # Forward
+        Z = eye_pos - tgt_pos
         Z.normalise()
 
-        # Right axis vector
+        # Camera Right
         X = QtGui.QVector3D.crossProduct( up.normalized(), Z )
         X.normalise()
 
         # Camera Up
-        Y = QtGui.QVector3D.crossProduct( zaxis, xaxis )
+        Y = QtGui.QVector3D.crossProduct( Z, X )
         Y.normalise()
 
 
@@ -257,6 +297,8 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         self.camera = NavCam()
         self.camera.aspect = self.aspect
         self.nav_mode = None
+        self._last_x = 0
+        self._last_y = 0
 
         # ticks for redraws / updates
         self.timer = QtCore.QTimer()
@@ -566,6 +608,12 @@ class GLVP( QtWidgets.QOpenGLWidget ):
             # e.g. toggle between Truck & Tumble
             self.mousePressEvent( event )
 
+    def mouseDoubleClickEvent( self, event ):
+        modifiers = event.modifiers()
+        if( bool( modifiers & QtCore.Qt.AltModifier ) ):
+            # Navigation + Double Click = Reset View
+            self.camera.resetView()
+
     def mouseMoveEvent( self, event ):
         """ The real meat of navigation goes on here. """
         if( self.nav_mode is None ):
@@ -582,37 +630,16 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         s_x, s_y = d_x * scale, d_y * scale
 
         if(   self.nav_mode == "TRUCK" ):
-            """ Move camera position in X and Y, move interest to match. """
-            offset = QtGui.QVector3D( s_x * -1.0, s_y, 0.0 )
-            self.camera.pos += offset
-            self.camera.int += offset
-            self.camera.lookAtInterest()
+            self.camera.truck( s_x * -1.0, s_y )
 
         elif( self.nav_mode == "TUMBLE" ):
-            """ Move camera position around surface of a ball
-                centred at interest, with r being interest distance.
-            """
-            print( self.camera.pos )
-            offset = QtGui.QVector3D( s_x, s_y, 0.0 )
-            new = self.camera.pos + offset
-            direction = self.camera.int - new
-            direction.normalize()
-            direction *= self.camera.dst
-            self.camera.pos = direction
-            print( self.camera.pos )
-            self.camera.lookAtInterest()
+            self.camera.tumble( s_x * -1.0, s_y )
 
         elif( self.nav_mode == "DOLLY" ):
-            """ Translate along the vector from camera pos to interest. 
-                TODO: Prevent pos moving through interest.
-            """
-            self.camera.dolly( s_x )
-
+            self.camera.dolly( s_x * 2.0 )
 
         elif( self.nav_mode == "ZOOM" ):
-            """ Narrow / Widen the FoV the FoV """
-            delta = (s_y/2.0) * -1.0
-            self.camera.changeFoV( delta )
+            self.camera.changeFoV( (s_y/2.0) * -1.0 )
 
         self._last_x, self._last_y = new_x, new_y
 
@@ -795,8 +822,8 @@ class GLVP( QtWidgets.QOpenGLWidget ):
     def resizeGL( self, width, height ):
         self.wh = ( width, height )
 
+        self.camera.changePort( width, height )
         self.aspect = float( self.wh[ 0 ] ) / float( self.wh[ 1 ] )
-        self.camera.aspect = self.aspect
         self.f.glViewport( 0, 0, self.wh[ 0 ], self.wh[ 1 ] )
 
 
