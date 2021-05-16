@@ -260,15 +260,12 @@ class NavCam( object ):
         Y.normalise()
 
 
+class QGLWhelper( QtWidgets.QOpenGLWidget ):
 
-class GLVP( QtWidgets.QOpenGLWidget ):
-
-    DEFAULT_BG = ( 0.0, 0.1, 0.1, 1.0 )
-    NAVIGATION_MODES = ( "TUMBLE", "TRUCK", "DOLLY", "ZOOM" )
+    DEFAULT_BG = (0.0, 0.1, 0.1, 1.0)
 
     def __init__( self, parent=None ):
-        # Odd Super call required with multi inheritance
-        QtWidgets.QOpenGLWidget.__init__( self, parent )
+        super( QGLWhelper, self ).__init__( parent )
 
         # Lock out GLPaint
         self.configured = False
@@ -277,21 +274,221 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         self.bgcolour = self.DEFAULT_BG
         self.vaos = {}
         self.buffers = {}
+        self.buffer_data = {}
         self.shaders = {}
+        self.textures = {}
         self.f = None # glFunctions
+
+        # Shader registry
+        self.shader_sources = {}
+
+        # canvas size
+        self.wh = ( self.geometry().width(), self.geometry().height() )
+        self.aspect = float(self.wh[0]) / float(self.wh[1])
+
+    def _confBuffer( self, kind, pattern, data=None ):
+
+        gl_buf = QtGui.QOpenGLBuffer( kind )
+        gl_buf.create()
+        gl_buf.setUsagePattern( pattern )
+
+        if( data is not None ):
+            gl_buf.bind()
+            gl_buf.allocate( data.tobytes(), data.nbytes )
+            gl_buf.release()
+
+        return gl_buf
+
+    def loadImage( self, image_fq ):
+        """ Use OpenCV to load an image
+
+        :param image_fq: (string) fully qualified path to the image
+        :return: (ndarray) the image in CV2 format
+
+        WARNING: Inexplicably, you cannot load the image and convert to a QImage in a single function!!!
+        """
+        img = cv2.imread( image_fq, cv2.IMREAD_COLOR )
+        return img
+
+    def cv2Q( self, cv_img ):
+        rgb_img = cv2.cvtColor( cv_img, cv2.COLOR_BGR2RGB )
+        img_h, img_w, img_ch = rgb_img.shape
+        q_img = QtGui.QImage( rgb_img.data, img_w, img_h, (img_ch * img_w), QtGui.QImage.Format_RGB888 )
+        return q_img
+
+    def bindTexture( self, image, filter_min, filter_mag, blend_s, blend_t ):
+        # Create Texture
+        target = QtGui.QOpenGLTexture( QtGui.QOpenGLTexture.Target2D ) # Target2D === GL_TEXTURE_2D
+        target.create()
+        target.bind()
+        target.setData( image )
+        target.setMinMagFilters( filter_min, filter_mag )
+        target.setWrapMode( QtGui.QOpenGLTexture.DirectionS, blend_s )
+        target.setWrapMode( QtGui.QOpenGLTexture.DirectionT, blend_t )
+        target.release()
+        return target
+
+    def _configureVertexAttribs( self, vao_name, shader_name ):
+
+        print( "Attaching VAPs on '{}' to shader '{}'".format( vao_name, shader_name ) )
+        vao = self.vaos[ vao_name ]
+        buffer = self.buffers[ vao_name ][ "vbo" ]
+        helper = self.shader_sources[ shader_name ]
+        vao_lock = QtGui.QOpenGLVertexArrayObject.Binder( vao )
+        buffer.bind()
+        for name, num, offset in helper.layout:
+            location = helper.attr_locs[ name ]
+            print( "  Setting VAP on '{}' @ {} with {} elems from {}b".format(
+                name, location, num, offset )
+            )
+            os_ptr = VoidPtr( offset )
+            self.f.glEnableVertexAttribArray( location )
+            self.f.glVertexAttribPointer( location,
+                                          num,
+                                          GL.GL_FLOAT,
+                                          GL.GL_FALSE,
+                                          helper.line_size,
+                                          os_ptr )
+        buffer.release()
+        del (vao_lock)
+        print( "This buffer line size is {}b".format( helper.line_size ) )
+
+    def _configureAttribBindings( self ):
+        """
+        Must be implemented by user
+        """
+        pass
+
+    def _configureShaders( self ):
+
+        for shader in self.shader_sources.values():
+            shader.compose()
+
+        for shader, helper in self.shader_sources.items():
+            print( "Preparing shader '{}'".format( shader ) )
+
+            self.shaders[ shader ] = QtGui.QOpenGLShaderProgram( self.context() )
+
+            self.shaders[ shader ].addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, helper.vtx_src )
+            self.shaders[ shader ].addShaderFromSourceCode( QtGui.QOpenGLShader.Fragment, helper.frg_src )
+
+            # Bind attrs
+            for attr, location in helper.attr_locs.items():
+                self.shaders[ shader ].bindAttributeLocation( attr, location )
+
+            # Link Shader
+            is_linked = self.shaders[ shader ].link()
+            if (not is_linked):
+                print( "  Error linking shader!" )
+
+            # Locate uniforms
+            for uniform, data in helper.vtx_uniforms.items():
+                location = self.shaders[ shader ].uniformLocation( uniform )
+                helper.vtx_unis[ uniform ] = location
+                print( "  Vtx uniform '{}' ({}{}) bound @ {}".format(
+                    uniform, data[ "type" ], data[ "shape" ], location )
+                )
+
+    def getGlInfo( self, show_ext=False ):
+        print( "Getting GL Info" )
+
+        ven = self.f.glGetString( GL.GL_VENDOR )
+        ren = self.f.glGetString( GL.GL_RENDERER )
+        ver = self.f.glGetString( GL.GL_VERSION )
+        slv = self.f.glGetString( GL.GL_SHADING_LANGUAGE_VERSION )
+        ext = self.f.glGetString( GL.GL_EXTENSIONS )
+
+        exts = ""
+        if (show_ext):
+            pad = "            "
+            w = TextWrapper( width=100, initial_indent="", subsequent_indent=pad )
+            lines = w.wrap( ext )
+            exts = "\n".join( lines )
+
+        else:
+            exts = "{} installed".format( len( ext.split() ) )
+
+        info = "Vendor: {}\nRenderer: {}\nOpenGL Version: {}\nShader Version: {}\nExtensions: {}".format(
+            ven, ren, ver, slv, exts )
+
+        # Get context Info?
+
+        return info
+
+    def _onClosing( self ):
+        """ Clean close of OGL resources """
+        print( "Clean Close" )
+        self.context().makeCurrent()
+
+        for buff in self.buffers.values():
+            buff.destroy()
+
+        self.texture.destroy()
+
+        for vao in self.vaos.values():
+            vao.destroy()
+
+        for shader in self.shaders.items():
+            del (shader)
+
+        self.doneCurrent()
+
+    def initalizeApp( self ):
+        """
+        Implement in user
+
+        self.configured must be set True!!!
+        """
+        pass
+
+    def initializeGL( self ):
+        super( QGLWhelper, self ).initializeGL()
+
+        # init GL Context
+        ctx = self.context()
+        ctx.aboutToBeDestroyed.connect( self._onClosing )
+
+        # get Context bound GL Funcs
+        self.f = QtGui.QOpenGLFunctions( ctx )
+        self.f.initializeOpenGLFunctions()
+
+        # shaders
+        self._configureShaders()
+
+        # buffers & Textures
+        self.f.glEnable( GL.GL_TEXTURE_2D )
+        self._prepareResources()
+
+        # Attrs
+        self._configureAttribBindings()
+
+        # misc
+        self.f.glClearColor( *self.bgcolour )
+
+        self.f.glEnable( GL.GL_DEPTH_TEST )
+        self.f.glDepthFunc( GL.GL_LESS )
+
+        self.f.glEnable( GL.GL_BLEND )
+        self.f.glBlendFunc( GL.GL_SRC_ALPHA, GL.GL_ONE_MINUS_SRC_ALPHA )
+
+        self.f.glEnable( GL.GL_POINT_SMOOTH )
+        self.f.glHint( GL.GL_POINT_SMOOTH_HINT, GL.GL_NICEST )
+
+        self.initalizeApp()
+
+
+class GLVP( QGLWhelper ):
+
+    NAVIGATION_MODES = ( "TUMBLE", "TRUCK", "DOLLY", "ZOOM" )
+
+    def __init__( self, parent=None ):
+        super( GLVP, self ).__init__( parent )
 
         # Shader registry
         self.shader_sources = {
             "packedCT" : PackedColourTexture(),
             "simpleC"  : SimpleColour(),
         }
-
-        for shader in self.shader_sources.values():
-            shader.compose()
-
-        # canvas size
-        self.wh = ( self.geometry().width(), self.geometry().height() )
-        self.aspect = float(self.wh[0]) / float(self.wh[1])
 
         # Transform & MVP
         self.rot = 0.0
@@ -337,48 +534,6 @@ class GLVP( QtWidgets.QOpenGLWidget ):
                     transforms.append( transform )
 
         return transforms
-
-    def _confBuffer( self, kind, pattern, data=None ):
-
-        gl_buf = QtGui.QOpenGLBuffer( kind )
-        gl_buf.create()
-        gl_buf.setUsagePattern( pattern )
-
-        if( data is not None ):
-            gl_buf.bind()
-            gl_buf.allocate( data.tobytes(), data.nbytes )
-            gl_buf.release()
-
-        return gl_buf
-
-    def loadImage( self, image_fq ):
-        """ Use OpenCV to load an image
-
-        :param image_fq: (string) fully qualified path to the image
-        :return: (ndarray) the image in CV2 format
-
-        WARNING: Inexplicably, you cannot load the image and convert to a QImage in a single function!!!
-        """
-        img = cv2.imread( image_fq, cv2.IMREAD_COLOR )
-        return img
-
-    def cv2Q( self, cv_img ):
-        rgb_img = cv2.cvtColor( cv_img, cv2.COLOR_BGR2RGB )
-        img_h, img_w, img_ch = rgb_img.shape
-        q_img = QtGui.QImage( rgb_img.data, img_w, img_h, (img_ch * img_w), QtGui.QImage.Format_RGB888 )
-        return q_img
-
-    def bindTexture( self, image, filter_min, filter_mag, blend_s, blend_t ):
-        # Create Texture
-        target = QtGui.QOpenGLTexture( QtGui.QOpenGLTexture.Target2D ) # Target2D === GL_TEXTURE_2D
-        target.create()
-        target.bind()
-        target.setData( image )
-        target.setMinMagFilters( filter_min, filter_mag )
-        target.setWrapMode( QtGui.QOpenGLTexture.DirectionS, blend_s )
-        target.setWrapMode( QtGui.QOpenGLTexture.DirectionT, blend_t )
-        target.release()
-        return target
 
     def _prepareResources( self ):
         #        positions         colors          texture coords
@@ -432,20 +587,26 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         # Generate OGL Buffers
         ########################################################################
 
-        # Main VAO
-        self.vaos["cubes"] = QtGui.QOpenGLVertexArrayObject()
-        self.vaos["cubes"].create()
-        vao_lock = QtGui.QOpenGLVertexArrayObject.Binder( self.vaos["cubes"] )
 
         # Cube Data ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        self.buffers["cube.vbo"] = self._confBuffer( QtGui.QOpenGLBuffer.VertexBuffer,
-                                                     QtGui.QOpenGLBuffer.StaticDraw,
-                                                     data=obj )
-        self.buffers["cube.ibo"] = self._confBuffer( QtGui.QOpenGLBuffer.IndexBuffer,
-                                                     QtGui.QOpenGLBuffer.StaticDraw,
-                                                     data=indices )
-        self.buffers["cube.ibo.in"] = 0
-        self.buffers["cube.ibo.idxs"] = len( indices )
+        task = "cube"
+        self.vaos[task] = QtGui.QOpenGLVertexArrayObject()
+        self.vaos[task].create()
+        vao_lock = QtGui.QOpenGLVertexArrayObject.Binder( self.vaos[task] )
+
+        self.buffers[task] = {}
+        self.buffer_data[task] = {}
+        buffers = self.buffers[task]
+
+        buffers["vbo"] = self._confBuffer( QtGui.QOpenGLBuffer.VertexBuffer,
+                                           QtGui.QOpenGLBuffer.StaticDraw,
+                                           data=obj )
+        buffers["ibo"] = self._confBuffer( QtGui.QOpenGLBuffer.IndexBuffer,
+                                           QtGui.QOpenGLBuffer.StaticDraw,
+                                           data=indices )
+
+        self.buffer_data[task]["ibo.in"] = 0
+        self.buffer_data[task]["ibo.idxs"] = len( indices )
 
         # Load Texture Image
         image_fq = "wood.jpg"
@@ -453,128 +614,40 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         q_img = self.cv2Q( img )
 
         # Create Texture
-        self.texture = self.bindTexture( q_img, QtGui.QOpenGLTexture.Linear, QtGui.QOpenGLTexture.Linear,
-                                         QtGui.QOpenGLTexture.ClampToEdge, QtGui.QOpenGLTexture.ClampToEdge )
+        self.textures[task] = self.bindTexture( q_img, QtGui.QOpenGLTexture.Linear, QtGui.QOpenGLTexture.Linear,
+                                                QtGui.QOpenGLTexture.ClampToEdge, QtGui.QOpenGLTexture.ClampToEdge )
         # Release the VAO Mutex Binder
         del( vao_lock )
 
         # Grid Data ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        self.vaos["grid"] = QtGui.QOpenGLVertexArrayObject()
-        self.vaos["grid"].create()
-        vao_lock = QtGui.QOpenGLVertexArrayObject.Binder( self.vaos["grid"] )
+        task = "grid"
+        self.vaos[task] = QtGui.QOpenGLVertexArrayObject()
+        self.vaos[task].create()
+        vao_lock = QtGui.QOpenGLVertexArrayObject.Binder( self.vaos[task] )
 
-        self.buffers[ "grid.vbo" ] = self._confBuffer( QtGui.QOpenGLBuffer.VertexBuffer,
-                                                       QtGui.QOpenGLBuffer.StaticDraw,
-                                                       data=floor_vtx )
-        self.buffers[ "grid.ibo" ] = self._confBuffer( QtGui.QOpenGLBuffer.IndexBuffer,
-                                                       QtGui.QOpenGLBuffer.StaticDraw,
-                                                       data=floor_idx )
-        self.buffers[ "grid.ibo.in" ] = 0
-        self.buffers[ "grid.ibo.idxs" ] = len( floor_idx )
-        self.buffers[ "grid.ibo.str.outline" ] = floor_line
-        self.buffers[ "grid.ibo.str.major" ] = floor_mjrs
+        self.buffers[task] = {}
+        self.buffer_data[task] = {}
+        buffers = self.buffers[task]
+
+        buffers["vbo"] = self._confBuffer( QtGui.QOpenGLBuffer.VertexBuffer,
+                                           QtGui.QOpenGLBuffer.StaticDraw,
+                                           data=floor_vtx )
+        buffers["ibo"] = self._confBuffer( QtGui.QOpenGLBuffer.IndexBuffer,
+                                           QtGui.QOpenGLBuffer.StaticDraw,
+                                           data=floor_idx )
+
+        self.buffer_data[task]["ibo.in"] = 0
+        self.buffer_data[task]["ibo.idxs"] = len( floor_idx )
+        self.buffer_data[task]["ibo.str.outline"] = floor_line
+        self.buffer_data[task]["ibo.str.major"] = floor_mjrs
 
         del (vao_lock)
 
-    # Generic GL Config --------------------------------------------------------
-    def _configureShaders( self ):
-
-        for shader, helper in self.shader_sources.items():
-            print( "Preparing shader '{}'".format( shader ) )
-
-            self.shaders[ shader ] = QtGui.QOpenGLShaderProgram( self.context() )
-
-            self.shaders[ shader ].addShaderFromSourceCode( QtGui.QOpenGLShader.Vertex, helper.vtx_src  )
-            self.shaders[ shader ].addShaderFromSourceCode( QtGui.QOpenGLShader.Fragment, helper.frg_src )
-
-            # Bind attrs
-            for attr, location in helper.attr_locs.items():
-                self.shaders[ shader ].bindAttributeLocation( attr, location )
-
-            # Link Shader
-            is_linked = self.shaders[ shader ].link()
-            if( not is_linked ):
-                print( "  Error linking shader!" )
-
-            # Locate uniforms
-            for uniform, data in helper.vtx_uniforms.items():
-                location = self.shaders[ shader ].uniformLocation( uniform )
-                helper.vtx_unis[ uniform ] = location
-                print( "  Vtx uniform '{}' ({}{}) bound @ {}".format(
-                       uniform, data[ "type"  ], data[ "shape" ], location )
-                )
+    # Application specific GL Config -------------------------------------------
 
     def _configureAttribBindings( self ):
-        self._configureVertexAttribs( self.vaos["grid"], "grid.vbo", "simpleC" )
-        self._configureVertexAttribs( self.vaos["cubes"], "cube.vbo", "packedCT" )
-
-
-    def _configureVertexAttribs( self, vao, buffer_name, shader_name ):
-        print( "Attaching VAPs on '{}' to shader '{}'".format( buffer_name, shader_name ) )
-        buffer = self.buffers[ buffer_name ]
-        helper = self.shader_sources[ shader_name ]
-        vao_lock = QtGui.QOpenGLVertexArrayObject.Binder( vao )
-        buffer.bind()
-        for name, num, offset in helper.layout:
-            location = helper.attr_locs[ name ]
-            print( "  Setting VAP on '{}' @ {} with {} elems from {}b".format(
-                name, location, num, offset )
-            )
-            os_ptr = VoidPtr( offset )
-            self.f.glEnableVertexAttribArray( location )
-            self.f.glVertexAttribPointer(  location,
-                                           num,
-                                           GL.GL_FLOAT,
-                                           GL.GL_FALSE,
-                                           helper.line_size,
-                                           os_ptr )
-        buffer.release()
-        del( vao_lock )
-        print( "This buffer line size is {}b".format( helper.line_size ) )
-
-    def getGlInfo( self, show_ext=False ):
-        print( "Getting GL Info" )
-
-        ven = self.f.glGetString( GL.GL_VENDOR )
-        ren = self.f.glGetString( GL.GL_RENDERER )
-        ver = self.f.glGetString( GL.GL_VERSION )
-        slv = self.f.glGetString( GL.GL_SHADING_LANGUAGE_VERSION )
-        ext = self.f.glGetString( GL.GL_EXTENSIONS )
-
-        exts = ""
-        if (show_ext):
-            pad = "            "
-            w = TextWrapper( width=100, initial_indent="", subsequent_indent=pad )
-            lines = w.wrap( ext )
-            exts = "\n".join( lines )
-
-        else:
-            exts = "{} installed".format( len( ext.split() ) )
-
-        info = "Vendor: {}\nRenderer: {}\nOpenGL Version: {}\nShader Version: {}\nExtensions: {}".format(
-            ven, ren, ver, slv, exts )
-
-        # Get context Info?
-
-        return info
-
-    def _onClosing( self ):
-        """ Clean close of OGL resources """
-        print( "Clean Close" )
-        self.context().makeCurrent()
-
-        for buff in self.buffers.values():
-            buff.destroy()
-
-        self.texture.destroy()
-
-        for vao in self.vaos.values():
-            vao.destroy()
-
-        for shader in self.shaders.items():
-            del( shader )
-
-        self.doneCurrent()
+        self._configureVertexAttribs( "grid", "simpleC" )
+        self._configureVertexAttribs( "cube", "packedCT" )
 
     def initalizeApp( self ):
         # Setup Camera
@@ -682,41 +755,6 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         return QtCore.QSize( 400, 400 )
 
     # gl funs ------------------------------------------------------------------
-    def initializeGL( self ):
-        super( GLVP, self ).initializeGL()
-
-        # init GL Context
-        ctx = self.context()
-        ctx.aboutToBeDestroyed.connect( self._onClosing )
-
-        # get Context bound GL Funcs
-        self.f = QtGui.QOpenGLFunctions( ctx )
-        self.f.initializeOpenGLFunctions()
-
-        # shaders
-        self._configureShaders()
-
-        # buffers & Textures
-        self.f.glEnable( GL.GL_TEXTURE_2D )
-        self._prepareResources()
-
-        # Attrs
-        self._configureAttribBindings()
-
-        # misc
-        self.f.glClearColor( *self.bgcolour )
-
-        self.f.glEnable( GL.GL_DEPTH_TEST )
-        self.f.glDepthFunc( GL.GL_LESS )
-
-        self.f.glEnable( GL.GL_BLEND )
-        self.f.glBlendFunc( GL.GL_SRC_ALPHA, GL.GL_ONE_MINUS_SRC_ALPHA )
-
-        self.f.glEnable( GL.GL_POINT_SMOOTH )
-        self.f.glHint( GL.GL_POINT_SMOOTH_HINT, GL.GL_NICEST )
-
-        self.initalizeApp()
-
     def paintGL( self ):
         # guard against early drawing
         if( not self.configured ):
@@ -738,21 +776,23 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         # Update View / Projection mats
         pv = self.camera.proj * self.camera.view
 
-        # attach VAO
-        vao_lock = QtGui.QOpenGLVertexArrayObject.Binder( self.vaos["cubes"] )
-
         # Cube Drawing
+        task = "cube"
+        # attach VAO
+        vao_lock = QtGui.QOpenGLVertexArrayObject.Binder( self.vaos[task] )
+
+        # Get Shader
         shader = self.shaders["packedCT"]
         helper = self.shader_sources["packedCT"]
         shader.bind()
 
-        self.buffers["cube.vbo"].bind()
-        self.buffers["cube.ibo"].bind()
-        self.texture.bind()
+        self.buffers[task]["vbo"].bind()
+        self.buffers[task]["ibo"].bind()
+        self.textures[task].bind()
 
         # striding data
-        ptr = VoidPtr( self.buffers[ "cube.ibo.in" ] )
-        num_idx = self.buffers[ "cube.ibo.idxs" ]
+        ptr = VoidPtr( self.buffer_data[task]["ibo.in" ] )
+        num_idx = self.buffer_data[task]["ibo.idxs" ]
 
         # Draw a field of cubes
         for transform in self.genCubeX( 10, 5, 6 ):
@@ -768,19 +808,21 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         self.rot += 1.0
 
         # Done Cubes
-        self.buffers["cube.vbo"].release()
-        self.buffers["cube.ibo"].release()
-        self.texture.release()
+        self.buffers[task]["vbo"].release()
+        self.buffers[task]["ibo"].release()
+        self.textures[task].release()
         shader.release()
         helper = None
         del (vao_lock)
 
         # Draw Grid
-        vao_lock = QtGui.QOpenGLVertexArrayObject.Binder( self.vaos[ "grid" ] )
+        task = "grid"
+        vao_lock = QtGui.QOpenGLVertexArrayObject.Binder( self.vaos[ task ] )
+
         shader = self.shaders["simpleC"]
         helper = self.shader_sources["simpleC"]
         shader.bind()
-        self.buffers[ "grid.vbo" ].bind()
+        self.buffers[task]["vbo"].bind()
 
         transform = QtGui.QMatrix4x4()
         transform.setToIdentity()
@@ -791,28 +833,28 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         shader.setUniformValue( helper.vtx_unis[ "u_colour" ], 0.8, 0.8, 0.8 )
 
         # draw grid
-        ptr = VoidPtr( self.buffers[ "grid.ibo.in" ] )
-        num_idx = self.buffers[ "grid.ibo.idxs" ]
+        ptr = VoidPtr( self.buffer_data[task]["ibo.in"] )
+        num_idx = self.buffer_data[task]["ibo.idxs" ]
         self.f.glDrawArrays( GL.GL_POINTS, ptr, num_idx )
         #self.f.glDrawElements( GL.GL_LINES, num_idx, GL.GL_UNSIGNED_INT, ptr )
 
         # draw outline
         # shader.setUniformValue( helper.vtx_unis[ "u_colour" ], 1.0, 1.0, 1.0 )
-        # for os, num in self.buffers[ "grid.ibo.str.outline" ]:
+        # for os, num in self.buffer_data[task]["ibo.str.outline" ]:
         #     print( os, num )
         #     ptr = VoidPtr( os )
         #     num_idx = num
         #     self.f.glDrawElements( GL.GL_LINES, num_idx, GL.GL_UNSIGNED_INT, ptr )
 
         # highlight majors
-        os, num = self.buffers[ "grid.ibo.str.major" ][0]
+        os, num = self.buffer_data[task]["ibo.str.major" ][0]
         shader.setUniformValue( helper.vtx_unis[ "u_colour" ], 1.0, 0.0, 0.0 )
         ptr = VoidPtr( os )
         num_idx = num
         self.f.glDrawArrays( GL.GL_POINTS, ptr, num_idx )
         #self.f.glDrawElements( GL.GL_LINES, num_idx, GL.GL_UNSIGNED_INT, ptr )
 
-        os, num = self.buffers[ "grid.ibo.str.major" ][1]
+        os, num = self.buffer_data[task]["ibo.str.major" ][1]
         shader.setUniformValue( helper.vtx_unis[ "u_colour" ], 0.0, 0.0, 1.0 )
         ptr = VoidPtr( os )
         num_idx = num
@@ -820,12 +862,11 @@ class GLVP( QtWidgets.QOpenGLWidget ):
         #self.f.glDrawElements( GL.GL_LINES, num_idx, GL.GL_UNSIGNED_INT, ptr )
 
         # Done Grid
-        self.buffers[ "grid.vbo" ].release()
+        self.buffers[task]["vbo"].release()
         shader.release()
-
+        del( vao_lock )
 
         # Done with GL
-        del( vao_lock )
         self.f.glDisable( GL.GL_DEPTH_TEST )
         painter.endNativePainting()
 
