@@ -17,7 +17,7 @@ The core tenet is so simple, it's laughable.  We are tracking something, with a 
 There is a lot of documentation and discussion of MoCap approaches in the [Wiki](https://github.com/bit-meddler/Gimli/wiki)
 
 ## Licence
-Not sure, GPL3 I guess.
+After some debate, I have selected the GPLv3 Licence for this project.  The Licence will be included in the root of the Project and refferenced in source and resource files going forwards.
 
 ## Installing
 We are running on Python 3, currently developing on 3.7.2.  To get the sources and possibly contribute, you'll need git - why else are you here?  Get git on Windows from https://gitforwindows.org/.  Pick an easy to find folder to put the git repos into, I've taken to using 'C:\code' or '/code' as my usual repo.  `git clone https://github.com/bit-meddler/Gimli.git` (and `git clone https://github.com/bit-meddler/rpiCap.git` for the pi Camera) in there.  To get the dependencies, you should be able to just `pip install -r Requirements.txt` from the project root (make sure it's the right pip for the Python3 interpreter).
