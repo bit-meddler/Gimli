@@ -163,6 +163,24 @@ def vgg_KRT_from_P(P):
 
 
 def directRQ( P, axis_x=1., axis_y=1., axis_z=1. ):
+    # 
+    # Copyright (C) 2016~2021 The Gimli Project
+    # This file is part of Gimli <https://github.com/bit-meddler/Gimli>.
+    #
+    # Gimli is free software: you can redistribute it and/or modify
+    # it under the terms of the GNU General Public License as published by
+    # the Free Software Foundation, either version 3 of the License, or
+    # (at your option) any later version.
+    #
+    # Gimli is distributed in the hope that it will be useful,
+    # but WITHOUT ANY WARRANTY; without even the implied warranty of
+    # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    # GNU General Public License for more details.
+    #
+    # You should have received a copy of the GNU General Public License
+    # along with Gimli.  If not, see <http://www.gnu.org/licenses/>.
+    #
+
     """
     Directly solving per element, knowing this is P -> K, RT rather than a generalized case.
 

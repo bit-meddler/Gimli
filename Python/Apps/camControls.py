@@ -1,3 +1,21 @@
+# 
+# Copyright (C) 2016~2021 The Gimli Project
+# This file is part of Gimli <https://github.com/bit-meddler/Gimli>.
+#
+# Gimli is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Gimli is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Gimli.  If not, see <http://www.gnu.org/licenses/>.
+#
+
 """ camControls.py - UI for configuring cameras and monitoring Centroids. Wand detection can be enabled
 
 """
@@ -300,10 +318,10 @@ class QMain( QtWidgets.QMainWindow ):
         self.close()
 
     def _aboutHelpCB( self ):
-        QtWidgets.QMessageBox.about( self, "About the software",
-                                     "I was born the son of a poor Filipino merchant. "
-                                     "I remember I would sit on the stoop of my tenement brownstone "
-                                     "on the lower East Side. I was... I was... I was... Crying!"
+        QtWidgets.QMessageBox.about( self, "About Gimli",
+                                     "Copyright (C) 2016~2021 The Gimli Project - GPLv3\n\n"
+                                     "Gimli is an Open Source Motion Capture system with an "
+                                     "acompanying Open Source MoCap Camera system. "
                                      )
 
     # UI Assembly

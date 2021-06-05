@@ -15,8 +15,3 @@
 # You should have received a copy of the GNU General Public License
 # along with Gimli.  If not, see <http://www.gnu.org/licenses/>.
 #
-
-""" Dial controls for ui """
-import logging
-from PySide2 import QtCore, QtGui, QtWidgets, QtOpenGL
-

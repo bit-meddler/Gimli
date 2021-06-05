@@ -1,3 +1,21 @@
+# 
+# Copyright (C) 2016~2021 The Gimli Project
+# This file is part of Gimli <https://github.com/bit-meddler/Gimli>.
+#
+# Gimli is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Gimli is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Gimli.  If not, see <http://www.gnu.org/licenses/>.
+#
+
 """ math3D.py - various helpers for 3D activities that might be shared between classes."""
 import numpy as np
 
@@ -31,10 +49,12 @@ def genRotMat( axis, angle, degrees=False ):
         mat = [ [ 1.0, 0.0, 0.0 ],
                 [ 0.0,  ca, -sa ],
                 [ 0.0,  sa,  ca ] ]
+
     elif (axis == "Y"):
         mat = [ [  ca, 0.0,  sa ],
                 [ 0.0, 1.0, 0.0 ],
                 [ -sa, 0.0,  ca ] ]
+
     elif (axis == "Z"):
         mat = [ [  ca, -sa, 0.0 ],
                 [  sa,  ca, 0.0 ],
@@ -113,3 +133,5 @@ def genOrthoProjectionPlans( left, right, base, top, near, far ):
         (      0.0,       0.0, -2.0 / fmn,   -(far - near) / fmn),
         (      0.0,       0.0,        0.0,                   1.0),
     ), dtype=FLOAT_T )
+
+    

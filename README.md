@@ -1,13 +1,13 @@
 # Gimli
 An Open Source MoCap system.
 
-_"We’re dedicated to a mission beyond our ability"._
+_"Certainty of death. Small chance of success. What are we waiting for?"_
 
 ## Current Status
 We're still a long way from anything like a remotely working application, as I need the help of more experienced developers (Qt MVC, OpenGL), and Mathematicians (Computer Vision, Linear algebra, Optimization).  If this is you, why not say 'Hello' in the [discussion](https://github.com/bit-meddler/Gimli/discussions).
 
 ## Rational
-I want to emulate the very best features of Giant, Vicon IQ, and the close seconds from Blade and Cortex in an Open Source non-profit system.  With commercial MoCap systems costing no less than $1000/camera, rpi based systems costing $70 per camera could be a great competitor... and open the possibility of MoCap based gait analysis and diagnostics in developing nations - who simply can't afford a $70k bottom end solution.  There is also an interesting possibility for home-use systems - possibly for AR/VR Hobbyists, Indy-games, or even making Erotic Animations for Second-Life _(you know who you are)_ - which are an improvement over the crop of shoddy inertial systems that have sprouted like mushrooms in recent years.  Oh and it's a great chance to Stick-it-to-the-Man as well.
+I want to emulate the very best features of Giant, Vicon IQ, and also Blade and Cortex, in an Open Source system.  With commercial MoCap systems costing no less than $1000/camera, rpi based systems costing $70 per camera could be a great competitor... and open the possibility of MoCap based gait analysis and diagnostics in developing nations - who simply can't afford a $70k bottom end solution.  There is also an interesting possibility for home-use systems - possibly for AR/VR Hobbyists, Indy-games, or even making Erotic Animations for Second-Life _(you know who you are)_ - which are an improvement over the crop of shoddy inertial systems that have sprouted like mushrooms in recent years.  Oh and it's a great chance to Stick-it-to-the-Man as well.
 
 ## Philosophy
 I hope to follow the 'UNIX Philosophy' - Individual small tools who are really good at one job only; creating easily readable files, preferably text-based; expecting outputs to flow into inputs where possible.
@@ -17,10 +17,10 @@ The core tenet is so simple, it's laughable.  We are tracking something, with a 
 There is a lot of documentation and discussion of MoCap approaches in the [Wiki](https://github.com/bit-meddler/Gimli/wiki)
 
 ## Licence
-After some debate, I have selected the GPLv3 Licence for this project.  The Licence will be included in the root of the Project and refferenced in source and resource files going forwards.
+After some debate, I have selected the GPLv3 Licence for this project.  The Licence is included in the root of the Project, and will be refferenced in source and resource files going forwards.
 
 ## Installing
-We are running on Python 3, currently developing on 3.7.2.  To get the sources and possibly contribute, you'll need git - why else are you here?  Get git on Windows from https://gitforwindows.org/.  Pick an easy to find folder to put the git repos into, I've taken to using 'C:\code' or '/code' as my usual repo.  `git clone https://github.com/bit-meddler/Gimli.git` (and `git clone https://github.com/bit-meddler/rpiCap.git` for the pi Camera) in there.  To get the dependencies, you should be able to just `pip install -r Requirements.txt` from the project root (make sure it's the right pip for the Python3 interpreter).
+We are running on Python 3, currently developing on 3.7.2.  To get the sources and possibly contribute, you'll need git - why else are you here?  Get git on Windows from https://gitforwindows.org/.  Pick an easy to find folder to put the git repos into, I've taken to using 'C:\code' or '/code' as my usual repo.  `git clone https://github.com/bit-meddler/Gimli.git` (and `git clone https://github.com/bit-meddler/rpiCap.git` for the rpi Camera) in there.  To get the dependencies, you should be able to just `pip install -r Requirements.txt` from the project root (make sure it's the right pip for the Python3 interpreter).
 
 ### First Run
 Just to prove it actually does something remotely like a MoCap system, open a terminal/cmd window and cd into Gimli/Python/Apps, then run `python simArbiter.py` this will simulate a 10 camera MoCap system, and play back a wand wave at 25fps.  You can experiment with the arguments, add `-r 10 -k 1` to play back more slowly (10fps).
