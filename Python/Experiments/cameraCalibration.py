@@ -16,7 +16,7 @@
 # along with Gimli.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-""" First fumbellings into camera calibration.
+""" First fumbling with camera calibration.
 """
 # Workaround not being in PATH
 import os, sys
@@ -35,6 +35,7 @@ from Core.labelling import labelWandFrame
 from Core.math3D import FLOAT_T
 
 
+# ------------------------------------- This is all Just list & Dict bashing -------------------------------------------
 def pairPermuteSorted( items ):
     """ assuming sorted list of items, make tuple permutations (was a comprehension, but hard to read)"""
     num = len( items )
@@ -53,14 +54,20 @@ def safeMin( listlike ):
 def buildCaliData( frames, target_frames, start, step ):
     """ Try to find target_frames count of wands in every camera.  from start index
         take step so we don't sample too many 'sequential' frames with little wand movement
-        hopefully this gives us random and average coverage over each caemra's sensor.
+        hopefully this gives us random and average coverage over each camera's sensor.
 
-        returns
-            counts:  (Counter) of wand counts - debug
-            matches: (dict)    dict indexed on tuple of camera id (camA,cmaB) being a list
-                               of frames where both cams see the wand
-            idx:     (int)     index that we got to when searching, in case we need to gather
-                               more wands (for refinement/buundel adjust)
+        Args:
+            frames       (list): MoCap Data structure - this is modified by the Labeller!
+            target_frames (int): Goal number of frames to collect for every camera
+            start         (int): Index to start collecting frames at
+            step          (int): number of frames to skip when collecting frames
+
+        Returns:
+            counts    (Counter): wand counts - debug
+            matches      (dict): Dict indexed on tuple of camera id (camA,cmaB) being a list
+                                 of frames where both cams see the wand
+            idx           (int): index that we got to when searching, in case we need to gather
+                                 more wands (for refinement/bundle adjust)
     """
     wand_counts = Counter()
     matchings = defaultdict( list )
@@ -109,6 +116,7 @@ def matchReport( matchings ):
     return pair_counts, observed_cameras
 
 def keyWithMax( d ):
+    """ Return Key of dict with max value """
     return max( d, key=lambda x:  d[x] )
 
 def restrictedDict( d, exclued ):
@@ -124,7 +132,7 @@ def prioritizeDict( d, required ):
     """ Return the subset of d containing keys with a member in required (was a comprehension, but hard to read) """
     ret = {}
     for k in d.keys():
-        if( k[0]  in required or k[1]  in required ):
+        if( k[0] in required or k[1] in required ):
             ret[k] = d[k]
     return ret
 
@@ -146,10 +154,28 @@ def permutePairings( A, B ):
 
     return pairings
 
+def getListContaining( item, holder ):
+    """ Expecting a list of lists, return the member list containing the item """
+    for X in holder:
+        if item in X:
+            return X
+    return [ item, ]
+
 def findGoodMarrage( pair_counts, cams, ungrouped, grouped ):
-    """ For UNGROUPED cameras:
+    """
+    Args:
+        pair_counts (Dict): Map of camera pair (A,B,) to a count of their corresponding frames
+        cams (Set): Set of cameras to
+        ungrouped (List): List of cameras that are not in a group
+        grouped (List): List of camera groups (also a list)
+
+    Returns:
+        pairs (List): List of camera pairs to try and solve
+        remains (List): List of cameras that couldn't be put in a group
+
+    For UNGROUPED cameras:
             1 Find the pair with most shared views of the wand
-            2 Remove these cameas from the 'available pairs'
+            2 Remove these cameras from the 'available pairs'
                 2.1 if one of the pair is in a group, remove it's partners as well
             3 until we run out
         For GROUPED cameras:
@@ -158,7 +184,7 @@ def findGoodMarrage( pair_counts, cams, ungrouped, grouped ):
             3 until we run out
             4 if a group is left over, prevent it's cameras being mis diagnosed as Ungrouped
             
-        Return the pairs to join, and any ungrouped cameas that need to be joined nex iteration
+        Return the pairs to join, and any ungrouped cameras that need to be joined next iteration
     """
     pairs = []
     banned_cams = set()
@@ -224,32 +250,91 @@ def findGoodMarrage( pair_counts, cams, ungrouped, grouped ):
     remains = list( cams - banned_cams )
     return pairs, remains
 
-def getListContaining( item, holder ):
-    """ Expecting a list of lists, return the member list containing the item """
-    for X in holder:
-        if item in X:
-            return X
-    return [ item, ]
 
+# ------------------------------------------ Computer Vision stuff starts here -----------------------------------------
 def skew( x ):
-    """ Generate the Skew-Semetric matrix for vector x """
+    """
+    Generate the Skew-Symmetric matrix for vector x
+
+    Args:
+        x (vec3): Vector to make skew Symmetric
+
+    Returns:
+        M (mat33): The Matrix
+    """
     return np.array([[    0, -x[2],  x[1] ],
                      [ x[2],     0, -x[0] ],
                      [-x[1],  x[0],     0 ] ])
 
-def computePair( A, B, frame_idxs, frames, clamp ):
-    """ OK solve the fundamental matrix I guess....
-            https://dellaert.github.io/19F-4476/Slides/S07-SFM-A.pdf
-            https://www.robots.ox.ac.uk/~vgg/hzbook/hzbook2/HZepipolar.pdf
-            http://users.umiacs.umd.edu/~ramani/cmsc828d/lecture27.pdf
-            http://www.cse.psu.edu/~rtc12/CSE486/lecture19.pdf
-
-        A note on notation, I'm writing e', P' etc as e_, P_, and it follows a
-        P'' would be P__.  However I'm also keeping track of np.svd emiting V transpose
-        by writing V_T - this doesn't mean V'T.  Sorry that's th ebest I've got
+def projectionFromFundamental( F ):
     """
-    
-    # Make pairwise matches
+    From the Radkie Lecture
+    https://youtu.be/DDjfhYxqp3w?list=PLuh62Q4Sv7BUJlKlt84HFqSWfW36MDd5a&t=922
+    P' = [ [e_]x * F + e_*vv.T | l*e_ ], let vv=[0,0,0] l=1
+
+    Args:
+        F (mat34): The Fundamental matrix
+
+    Returns:
+        P (mat34): The Projection matrix
+    """
+
+    U, s, V_T = np.linalg.svd( F )
+
+    e_ = V_T[:,-1]
+    P = np.hstack( ( np.dot( skew(e_), F ) + e_, e_.reshape((3,1)) ) )
+
+    pprint( P )
+    return P
+
+def projectionsFromEssential( E ):
+    """
+    From Radkie and Cyril
+
+    Args:
+        E (mat34): The Essential matrix
+
+    Returns:
+        Ps (4 mat34s): The 4 possible Projection matrixs
+    """
+    U, s, V_T = np.linalg.svd( E )
+
+    # Test rotation
+    if( np.linalg.det( np.dot(U, V_T) ) < 0. ):
+        V_T = -V_T
+
+    # Assess the 4 possible solutions
+    W = np.asarray( [ [  0, -1,  0 ],
+                      [  1,  0,  0 ],
+                      [  0,  0,  1 ] ], dtype=FLOAT_T )
+    # Cyril has an alternate matrix???
+    Z = np.asarray( [ [  0,  1,  0 ],
+                      [ -1,  0,  0 ],
+                      [  0,  0,  0 ] ], dtype=FLOAT_T )
+
+    u3 = U[ :, 2 ].reshape( (3, 1) )
+
+    # Four permutations - or have I missed something?
+    P_1 = np.hstack( (np.dot( np.dot( U, W ), V_T ), u3) )
+    P_2 = np.hstack( (np.dot( np.dot( U, W ), V_T ), -u3) )
+    P_3 = np.hstack( (np.dot( np.dot( U, W.T ), V_T ), u3) )
+    P_4 = np.hstack( (np.dot( np.dot( U, W.T ), V_T ), -u3) )
+
+    return [ P_1, P_2, P_3, P_4 ]
+
+def makeMatchList( A, B, frame_idxs, frames ):
+    """
+    Make a list of corresponding image co-ords for cameras A & B using frame_idxs
+
+    Args:
+        A                (int): 'Left' camera index
+        B                (int): 'Right' camera index
+        frame_idxs      (list): list of frames with a correspondence between A & B
+        frames (list of lists): MoCap Frames data structure
+
+    Returns:
+        matches         (list): The match list
+    """
     matches = []
     for idx in frame_idxs:
         strides, x2ds, labels = frames[ idx ]
@@ -260,6 +345,39 @@ def computePair( A, B, frame_idxs, frames, clamp ):
 
         for i in range( A_so - A_si ):
             matches.append( [ x2ds[ A_si + A_order[i] ], x2ds[ B_si + B_order[i] ] ] )
+
+    return matches
+
+def computePair( A, B, frame_idxs, frames, P_A, P_B, clamp, force_eigen=False ):
+    """ OK solve the fundamental matrix I guess....
+            https://dellaert.github.io/19F-4476/Slides/S07-SFM-A.pdf
+            https://www.robots.ox.ac.uk/~vgg/hzbook/hzbook2/HZepipolar.pdf
+            http://users.umiacs.umd.edu/~ramani/cmsc828d/lecture27.pdf
+            http://www.cse.psu.edu/~rtc12/CSE486/lecture19.pdf
+
+        # Which is it E or F? I don't know the intrinsics initially, but hopefully we can refine them
+
+        A note on notation, I'm writing e', P' etc as e_, P_, and it follows a
+        P'' would be P__.  However I'm also keeping track of np.svd emitting V Transpose
+        by writing V_T - this doesn't mean V'T.  Sorry that's the best I've got
+
+        Args:
+            A                (int): 'Left' camera index
+            B                (int): 'Right' camera index
+            frame_idxs      (list): list of frames with a correspondence between A & B
+            frames (list of lists): MoCap Frames data structure
+            P_A            (mat34): Initial Projection Matrix for Camera A
+            P_B            (mat34): Initial Projection Matrix for Camera B
+            clamp            (int): Limit number of frames that contribute to solution
+            force_eigen     (bool): Force Eigenvalues of F (Compute the essential matrix)
+
+        Returns:
+            P_A (mat34): The Projection Matrix of camera A
+            P_B (mat34): The Projection Matrix of camera B
+
+    """
+    # Make pairwise matches
+    matches = makeMatchList( A, B, frame_idxs, frames )
 
     # assemble the equations
     Es = []
@@ -272,68 +390,103 @@ def computePair( A, B, frame_idxs, frames, clamp ):
     print( "solving {} Equations".format( len( Es ) ) )
     Es = np.asarray( Es, dtype=FLOAT_T )
     U, s, V_T = np.linalg.svd( Es )
-    Fa = V_T[:,-1].reshape( (3,3) ) # F aprox
+    Ea = V_T[:,-1].reshape( (3,3) ) # E aprox
     
     # Clamp to Rank 2
-    U, s, V_T = np.linalg.svd( Fa ) 
+    U, s, V_T = np.linalg.svd( Ea )
+
+    if( force_eigen ):
+        s = [ 1., 1., 0.]
+
     D = np.diag( s )
     D[2,2] = 0
-    F = np.dot( np.dot( U, D ), V_T )
 
-    # test F's plausability
+    #F = np.dot( np.dot( U, D ), V_T )
+    E = np.dot( U, np.dot( D, V_T ) )
+
+    # Normalize E?
+    #E /= E[2,2]
+
+    # test matrix's plausibility ?
     u,  v , _ = matches[0][0]
     u_, v_, _ = matches[0][1]
     x  = np.asarray( [u,v,1], dtype=FLOAT_T )
     x_ = np.asarray( [u_,v_,1], dtype=FLOAT_T )
-    zero = np.dot( np.dot(x_, F), x )
-    epl = np.dot( x, F ) # F(x) -> epipolar line of x'
+    zero = np.dot( np.dot(x_, E), x )
+    epl = np.dot( x, E ) # F(x) -> epipolar line of x'
 
     if( np.linalg.det(F) > 1e-8 ):
-        print( "Unaceptable Determinant!" )
+        print( "Unacceptable Determinant!" )
 
     print( "x:{:.3f},{:.3f} x':{:.3f},{:.3f} epl [{:.5f}, {:.5f}, {:.5f}] Ferr {:.5f}\n".format(
         u, v, u_, v_, *epl, zero ) )
 
+    # get possible solutions
+    P_Bs = projectionsFromEssential( E )
 
-    # from the Radke lecture...
-    # https://youtu.be/DDjfhYxqp3w?list=PLuh62Q4Sv7BUJlKlt84HFqSWfW36MDd5a&t=922
-    # P' = [ [e_]x * F + e_*vv.T | l*e_ ], let vv=[0,0,0] l=1
-    U, s, V_T = np.linalg.svd( F )
-    e_ = V_T[:,-1]
+    # pick a point & make Homogenous
+    a2d, b2d = matches[ 0 ]
+    a2d[2] = b2d[2] = 1.
 
-    P_ = np.hstack( ( np.dot( skew(e_), F ) + e_, e_.reshape((3,1)) ) )
+    # Test point is reconstructed in a plausable place
+    for P in P_Bs:
+        recon = triangulatePoint( a2d, b2d, P_A, P )
 
-    #pprint( P_ )
+        # if it's behind A, that's a no-go
+        if( recon[2] < 0. ):
+            continue
 
-    # If essential matrix known...
-    if( False ):
-        U, s, V_T = np.linalg.svd( E )
-        W = np.asarray( [[0, -1, 0],
-                         [1,  0, 0],
-                         [0,  0, 1]], dtype=FLOAT_T )
-        Z = np.asarray( [[ 0, 1, 0],
-                         [-1, 0, 0],
-                         [ 0, 0, 0]], dtype=FLOAT_T )
+        P_B_ = np.linalg.inv( np.vstack( [P, [0., 0., 0., 1.]] ) )
+        B_pos = np.dot( P_B_[:3, :4], recon )
 
-        u3 = U[:,2].reshape((3,1))
+        if( B_pos[2] > 0. ):
+            P_B = P
 
-        # Four permutations - or have I missed something?
-        P_1 = np.hstack( (np.dot(np.dot(U, W  ), V_T),  u3) )
-        P_2 = np.hstack( (np.dot(np.dot(U, W  ), V_T), -u3) )
-        P_3 = np.hstack( (np.dot(np.dot(U, W.T), V_T),  u3) )
-        P_4 = np.hstack( (np.dot(np.dot(U, W.T), V_T), -u3) )
-        
-    # How do I triangulate the dets to 3Ds, with some slack?
+    return P_A, P_B
 
-    return None, None
+def triangulatePoint( a2d, b2d, P_A, P_B ):
+    """
+    # ???
+    Args:
+        a2s  (vec3): detection image coordinate in camera A
+        b2d  (vec3): detection image coordinate in camera B
+        P_A (mat34): Projection matrix A
+        P_B (mat34): Projection matrix B
+
+    Returns:
+
+    """
+    A = np.vstack( [
+        np.dot( skew( a2d ), P_A),
+        np.dot( skew( b2d ), P_B)
+    ] )
+
+    U, s, V_T = np.linalg.svd( A )
+    P_ = np.ravel( V_T[-1, :4] )
+    P_ /= P_[ 3 ]
+
+    return P_
 
 def sterioCalibrate( pairs, groups, frames, matches, mats, clamp ):
-    # pair A & B
-    # find the groups A & B are members of
-    # Calibrate A & B, locking A at RT=np.eye(4)
-    # transform groupA into A's space
-    # transform groupB into B's space
-    # merge to a new group
+    """
+    For each of the proposed pairing of cameras (A,B) in pairs.
+        # find the groups A & B are members of
+        # Calibrate A & B, locking A at RT=np.eye(4)
+        # transform groupA into A's space
+        # transform groupB into B's space
+        # merge to a new group
+
+    Args:
+        pairs (list): A list of pairs of cameras having many corresponding points
+        groups (list): A list of lists, being groups of cameras in a 'shared' coordinate system
+        frames (list): MoCap Frame datastructure
+        matches (Dict): A map of Camera Pairs to a list of frames with correspondances for that pair
+        mats (list of mat34): The current camera P mats
+        clamp (int): Limit the number of frames computed
+
+    Returns:
+        new_groups (list): The new Camera Groupings - mats is modified in place
+    """
     new_groups = []
     for A, B in pairs:
         print( "Calibrating Pair ({}, {})".format( A, B ) )
@@ -347,11 +500,12 @@ def sterioCalibrate( pairs, groups, frames, matches, mats, clamp ):
 
         # Todo: Computer Vision PhD at Oxon or Surrey
 
-        P_A, P_B = computePair( A, B, pair_frames, frames, clamp )
+        # at an inital process, we're going from an "initalized" Camera to the 1st estimate
+        P_A, P_B = computePair( A, B, pair_frames, frames, mats[A], mats[B], clamp )
 
         # if A or B in a group, do the rigid transform
 
-        # return the solved camea group
+        # return the solved camera group
 
         gp_A.extend( gp_B )
         new_groups.append( gp_A )
@@ -362,7 +516,8 @@ def sterioCalibrate( pairs, groups, frames, matches, mats, clamp ):
     return new_groups
 
 
-
+def genBlankP():
+    return np.asarray( [[ 1, 0, 0, 0 ], [ 0, 1, 0, 0 ], [ 0, 0, 1, 0 ]], dtype=FLOAT_T )
 
 ###########################################################################################
 
@@ -390,11 +545,15 @@ if( num_frames > 0 ):
     ungrouped = sorted( list( cams ) )
     cam_groups = []
     all_cams_grouped = False
+
+    # Initialize all mats at [I|0]
+    mats = [ genBlankP() for _ in range( max( ungrouped ) ) ]
+
     print( "Calibrating {} cameras: {}\n".format( len( cams ), counts ) )
     print( "Merging pairs to inital estimate" )
     while( not all_cams_grouped ):
         sterio_tasks, ungrouped = findGoodMarrage( pair_counts, cams, ungrouped, cam_groups )
-        cam_groups = sterioCalibrate( sterio_tasks, cam_groups, frames, matches, None, GOAL_FRAMES )
+        cam_groups = sterioCalibrate( sterio_tasks, cam_groups, frames, matches, mats, GOAL_FRAMES )
         print( "Cal'd Cam Groups: {}, leftover cameras: {}\n".format( cam_groups, ungrouped ) )
         if( len( cam_groups ) == 1 ):
             all_cams_grouped = True
