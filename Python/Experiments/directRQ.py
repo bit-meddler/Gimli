@@ -6,6 +6,7 @@ https://see.stanford.edu/materials/lsoeldsee263/04-qr.pdf
 """
 
 def setRot( rx, ry, rz ):
+    # assume XYZ rot order
     R = np.array([ [np.cos(ry) * np.cos(rz),
                     np.cos(rz) * np.sin(rx) * np.sin(ry) - np.cos(rx) * np.sin(rz),
                     np.sin(rx) * np.sin(rz) + np.cos(rx) * np.cos(rz) * np.sin(ry)],
@@ -48,7 +49,9 @@ def rq2(A):
     # The returned Q is the flipped up-down of transposed Q
     Q = np.transpose(Q)
     Q[0:m-1, :] = Q[m-1:0:-1, :]
- 
+
+
+    # actually close, but loses the t component!
     return R, Q # Nope thats a fail
 
 
@@ -252,6 +255,7 @@ def directRQ( P, axis_x=1., axis_y=1., axis_z=1. ):
     
     return K, RT
 
+
 # Lets see if any of these work...
 
 # form an aproximatly correct P matrix, by K x RT, with realistic K and RT components
@@ -263,36 +267,46 @@ K[0,0] = K[1,1] = 2500 # focal length in px (12.5mm / 5umm) = what I'd expect fo
 K[:2,2] = 0.0001 # Image centre
 
 # Give me an R!
-R = setRot( np.deg2rad(-20), np.deg2rad(15), np.deg2rad(0) )
+R = setRot( np.deg2rad(-20), np.deg2rad(15), np.deg2rad(6) )
 
 # test othonormality
 for i in range( 3 ):
     print( np.linalg.norm( R[i,:] ) )
 
 # Give me a T!
-T = np.asarray( [ 305, 1822, 305 ] ).reshape( 3, 1 )
+t = np.asarray( [ 305, 1822, 305 ] ).reshape( 3, 1 )
 
 # Give me a P!
-RT = np.hstack( (R,T) )
+RT = np.hstack( (R,t) )
 P = np.dot( K, RT )
-
-print( "Test configuratoin:" )
+P = np.vstack( (P, np.asarray([[0,0,0,1]])) )
+print( "Test configuration:" )
 print( K )
 print( RT )
 print( P )
 
 # Try out RQ Decomposition with various methods I've googled for over the last week...
-algos = [ rq, rq2, gramSchmidt, vgg_KRT_from_P, directRQ ]
+#algos = [ rq, rq2, gramSchmidt, vgg_KRT_from_P, directRQ ]
+algos = [ rq, rq2, directRQ ]
 for algo in algos:
     print( "\nRunning '{}'".format( algo.__name__ ) )
 
     try:
         K_, RT_ = algo( P )
+        print( K_ )
+        print( RT_ )
     except:
         print( "That's a Nope" )
+
     else:
         print( "Intrinsic closeness:" )
-        print( K_ - K )
-        
+        try:
+            print( K_ - K )
+        except ValueError:
+            print( "error", K_.shape )
+
         print( "Extrinsic closeness:" )
-        print( RT_ - RT )
+        try:
+            print( RT_ - RT )
+        except ValueError:
+            print( "error", RT_.shape )

@@ -33,7 +33,7 @@ from pprint import pprint
 
 from Core.labelling import labelWandFrame
 from Core.math3D import FLOAT_T
-
+from Core import Nodes
 
 # ------------------------------------- This is all Just list & Dict bashing -------------------------------------------
 def pairPermuteSorted( items ):
@@ -348,7 +348,7 @@ def makeMatchList( A, B, frame_idxs, frames ):
 
     return matches
 
-def computePair( A, B, frame_idxs, frames, P_A, P_B, clamp, force_eigen=False ):
+def computePair( A, B, frame_idxs, frames, cam_A, cam_B, clamp, force_eigen=False ):
     """ OK solve the fundamental matrix I guess....
             https://dellaert.github.io/19F-4476/Slides/S07-SFM-A.pdf
             https://www.robots.ox.ac.uk/~vgg/hzbook/hzbook2/HZepipolar.pdf
@@ -366,8 +366,8 @@ def computePair( A, B, frame_idxs, frames, P_A, P_B, clamp, force_eigen=False ):
             B                (int): 'Right' camera index
             frame_idxs      (list): list of frames with a correspondence between A & B
             frames (list of lists): MoCap Frames data structure
-            P_A            (mat34): Initial Projection Matrix for Camera A
-            P_B            (mat34): Initial Projection Matrix for Camera B
+            cam_A    (Camera Node): Access to Initial Projection Matrix for Camera A
+            cam_B    (Camera Node): Access to Initial Projection Matrix for Camera B
             clamp            (int): Limit number of frames that contribute to solution
             force_eigen     (bool): Force Eigenvalues of F (Compute the essential matrix)
 
@@ -376,6 +376,10 @@ def computePair( A, B, frame_idxs, frames, P_A, P_B, clamp, force_eigen=False ):
             P_B (mat34): The Projection Matrix of camera B
 
     """
+    # Get current P matrix
+    P_A = cam_A.P
+    P_B = cam_B.P
+
     # Make pairwise matches
     matches = makeMatchList( A, B, frame_idxs, frames )
 
@@ -415,7 +419,7 @@ def computePair( A, B, frame_idxs, frames, P_A, P_B, clamp, force_eigen=False ):
     zero = np.dot( np.dot(x_, E), x )
     epl = np.dot( x, E ) # F(x) -> epipolar line of x'
 
-    if( np.linalg.det(F) > 1e-8 ):
+    if( np.linalg.det(E) > 1e-8 ):
         print( "Unacceptable Determinant!" )
 
     print( "x:{:.3f},{:.3f} x':{:.3f},{:.3f} epl [{:.5f}, {:.5f}, {:.5f}] Ferr {:.5f}\n".format(
@@ -467,7 +471,7 @@ def triangulatePoint( a2d, b2d, P_A, P_B ):
 
     return P_
 
-def sterioCalibrate( pairs, groups, frames, matches, mats, clamp ):
+def stereoCalibrate( pairs, groups, frames, matches, cams, clamp ):
     """
     For each of the proposed pairing of cameras (A,B) in pairs.
         # find the groups A & B are members of
@@ -481,7 +485,7 @@ def sterioCalibrate( pairs, groups, frames, matches, mats, clamp ):
         groups (list): A list of lists, being groups of cameras in a 'shared' coordinate system
         frames (list): MoCap Frame datastructure
         matches (Dict): A map of Camera Pairs to a list of frames with correspondances for that pair
-        mats (list of mat34): The current camera P mats
+        cams (list of Camera Nodes): The Current Camera data
         clamp (int): Limit the number of frames computed
 
     Returns:
@@ -501,7 +505,7 @@ def sterioCalibrate( pairs, groups, frames, matches, mats, clamp ):
         # Todo: Computer Vision PhD at Oxon or Surrey
 
         # at an inital process, we're going from an "initalized" Camera to the 1st estimate
-        P_A, P_B = computePair( A, B, pair_frames, frames, mats[A], mats[B], clamp )
+        P_A, P_B = computePair( A, B, pair_frames, frames, cams[A], cams[B], clamp )
 
         # if A or B in a group, do the rigid transform
 
@@ -516,21 +520,20 @@ def sterioCalibrate( pairs, groups, frames, matches, mats, clamp ):
     return new_groups
 
 
-def genBlankP():
-    return np.asarray( [[ 1, 0, 0, 0 ], [ 0, 1, 0, 0 ], [ 0, 0, 1, 0 ]], dtype=FLOAT_T )
-
 ###########################################################################################
 
-# Todo: Need to use more than 20 frames, and provide ExampleData in the repo
+# Todo: So much... :(
 frames=[]
 with open( os.path.join( DATA_PATH, "calibration.pik" ), "rb" ) as fh:
     frames = pickle.load( fh )
 
 num_frames = len( frames )
 
+# Try using the Camera Nodes I started work on ages ago...
+root_node = Nodes.factory( Nodes.TYPE_ROOT )
 
 if( num_frames > 0 ):
-    # need to store, K, R, T, RT, P, and k1, k2 for each camera...
+
 
     GOAL_FRAMES = 125
     step = int( num_frames / GOAL_FRAMES )
@@ -540,20 +543,21 @@ if( num_frames > 0 ):
 
     # Prime the calibration with approx matching
     counts, matches, last_idx = buildCaliData( frames, GOAL_FRAMES, start, step )
-    pair_counts, cams = matchReport( matches )
+    pair_counts, cam_idxs = matchReport( matches )
+    num_cams = len( cam_idxs )
 
-    ungrouped = sorted( list( cams ) )
+    ungrouped = sorted( list( cam_idxs ) )
     cam_groups = []
     all_cams_grouped = False
 
-    # Initialize all mats at [I|0]
-    mats = [ genBlankP() for _ in range( max( ungrouped ) ) ]
+    # Initialize all cameras
+    cams = [ Nodes.factory( Nodes.TYPE_CAMERA, name="Cam_{:0<2}".format( i ), parent=root_node ) for i in range( max( ungrouped ) ) ]
 
-    print( "Calibrating {} cameras: {}\n".format( len( cams ), counts ) )
+    print( "Calibrating {} cameras: {}\n".format( num_cams, counts ) )
     print( "Merging pairs to inital estimate" )
     while( not all_cams_grouped ):
-        sterio_tasks, ungrouped = findGoodMarrage( pair_counts, cams, ungrouped, cam_groups )
-        cam_groups = sterioCalibrate( sterio_tasks, cam_groups, frames, matches, mats, GOAL_FRAMES )
+        stereo_tasks, ungrouped = findGoodMarrage( pair_counts, cam_idxs, ungrouped, cam_groups )
+        cam_groups = stereoCalibrate( stereo_tasks, cam_groups, frames, matches, cams, GOAL_FRAMES )
         print( "Cal'd Cam Groups: {}, leftover cameras: {}\n".format( cam_groups, ungrouped ) )
         if( len( cam_groups ) == 1 ):
             all_cams_grouped = True

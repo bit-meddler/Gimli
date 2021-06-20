@@ -42,7 +42,7 @@ class Camera( Node ):
         self.orientation = [0.,0.,0.] # expects degrees, X, Y, Z rotation
 
         # Intrinsics - K ------------------------------------------------
-        #Internal
+        # Internal
         self.K  = np.eye( 3, dtype=FLOAT_T )
         # Human
         self.pp = [0.,0.]
@@ -54,7 +54,7 @@ class Camera( Node ):
         self.k1 = self.k2 = 0.
 
         # Projection Matrix ----------------------------------------------
-        self.P = np.eye( 4, dtype=FLOAT_T )
+        self.P = self.genBlankP()
 
     # lets do some camera maths ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -74,7 +74,7 @@ class Camera( Node ):
             self.R = R
         return R
 
-    def formRT( self, apply=True, xR=None, xT=None ):
+    def formRT( self, xR=None, xT=None, apply=True ):
         """ Form the internal RT Matrix, an "Override" R or T can be supplied to
             superced the internal values it's expected the R is a 3x3 orthonormal
             rotation matirx, and not a list of roll, pitch, yaw values.
@@ -104,3 +104,6 @@ class Camera( Node ):
             self.P = P
         return P
 
+    @staticmethod
+    def genBlankP():
+        return np.asarray( [ [1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1] ], dtype=FLOAT_T )
