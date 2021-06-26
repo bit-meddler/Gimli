@@ -282,12 +282,13 @@ def projectionFromFundamental( F ):
     U, s, V_T = np.linalg.svd( F )
 
     e_ = V_T[:,-1]
+
     P = np.hstack( ( np.dot( skew(e_), F ) + e_, e_.reshape((3,1)) ) )
 
     pprint( P )
     return P
 
-def projectionsFromEssential( E ):
+def projectionsFromMatrix( E ):
     """
     From Radkie and Cyril
 
@@ -307,10 +308,6 @@ def projectionsFromEssential( E ):
     W = np.asarray( [ [  0, -1,  0 ],
                       [  1,  0,  0 ],
                       [  0,  0,  1 ] ], dtype=FLOAT_T )
-    # Cyril has an alternate matrix???
-    Z = np.asarray( [ [  0,  1,  0 ],
-                      [ -1,  0,  0 ],
-                      [  0,  0,  0 ] ], dtype=FLOAT_T )
 
     u3 = U[ :, 2 ].reshape( (3, 1) )
 
@@ -362,7 +359,7 @@ def computePair( A, B, frame_idxs, frames, cam_A, cam_B, clamp, force_eigen=Fals
         by writing V_T - this doesn't mean V'T.  Sorry that's the best I've got
 
         Args:
-            A                (int): 'Left' camera index
+            A                (int): 'Left'  camera index
             B                (int): 'Right' camera index
             frame_idxs      (list): list of frames with a correspondence between A & B
             frames (list of lists): MoCap Frames data structure
@@ -394,45 +391,47 @@ def computePair( A, B, frame_idxs, frames, cam_A, cam_B, clamp, force_eigen=Fals
     print( "solving {} Equations".format( len( Es ) ) )
     Es = np.asarray( Es, dtype=FLOAT_T )
     U, s, V_T = np.linalg.svd( Es )
-    Ea = V_T[:,-1].reshape( (3,3) ) # E aprox
+    Fa = V_T[:,-1].reshape( (3,3) ) # F aprox
     
     # Clamp to Rank 2
-    U, s, V_T = np.linalg.svd( Ea )
+    U, s, V_T = np.linalg.svd( Fa )
 
     if( force_eigen ):
+        # If we have Normalized using a known k matrix, we can compute the Essential Matrix
         s = [ 1., 1., 0.]
 
     D = np.diag( s )
     D[2,2] = 0
 
     #F = np.dot( np.dot( U, D ), V_T )
-    E = np.dot( U, np.dot( D, V_T ) )
+    F = np.dot( U, np.dot( D, V_T ) )
 
-    # Normalize E?
-    #E /= E[2,2]
+    # Normalize?
+    #F /= F[2,2]
 
     # test matrix's plausibility ?
     u,  v , _ = matches[0][0]
     u_, v_, _ = matches[0][1]
     x  = np.asarray( [u,v,1], dtype=FLOAT_T )
     x_ = np.asarray( [u_,v_,1], dtype=FLOAT_T )
-    zero = np.dot( np.dot(x_, E), x )
-    epl = np.dot( x, E ) # F(x) -> epipolar line of x'
+    zero = np.dot( np.dot(x_, F), x )
+    epl = np.dot( x, F ) # F(x) -> epipolar line of x'
 
-    if( np.linalg.det(E) > 1e-8 ):
+    if( np.linalg.det(F) > 1e-8 ):
         print( "Unacceptable Determinant!" )
 
     print( "x:{:.3f},{:.3f} x':{:.3f},{:.3f} epl [{:.5f}, {:.5f}, {:.5f}] Ferr {:.5f}\n".format(
         u, v, u_, v_, *epl, zero ) )
 
     # get possible solutions
-    P_Bs = projectionsFromEssential( E )
+    P_Bs = projectionsFromMatrix( F )
 
     # pick a point & make Homogenous
     a2d, b2d = matches[ 0 ]
     a2d[2] = b2d[2] = 1.
 
     # Test point is reconstructed in a plausable place
+    P_B_computed = None
     for P in P_Bs:
         recon = triangulatePoint( a2d, b2d, P_A, P )
 
@@ -444,7 +443,10 @@ def computePair( A, B, frame_idxs, frames, cam_A, cam_B, clamp, force_eigen=Fals
         B_pos = np.dot( P_B_[:3, :4], recon )
 
         if( B_pos[2] > 0. ):
-            P_B = P
+            P_B_computed = P
+            
+    if( P_B_computed is None ):
+        print( "Unable to find valid P_B" )
 
     return P_A, P_B
 

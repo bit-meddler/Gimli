@@ -119,6 +119,31 @@ def gramSchmidt( P ):
 
     return (R, Q) # that's another Nope
 
+def new_vgg( P ):
+    # Reverse the rows
+    filped = np.flipud( P )
+    
+    # Decompose
+    Qqr, Rqr = np.linalg.qr( filped.T )
+    
+    # Restore
+    Rqr = np.flipud( Rqr.T )
+    K = np.fliplr( Rqr )
+    R = np.transpose( np.fliplr( Qqr ) ) # R has been transposed!
+    
+    # from the R, Q we now have, try the vgg method again
+    # Fix the signs - I'm sure this isn't very correct, but it works!
+    sg = np.sign( P )
+
+    K = np.multiply( np.abs( K ), sg )
+    R = np.multiply( np.abs( R ), sg )
+    t = np.dot( np.linalg.inv( K ), -R )
+
+    # Audment R with t, overwriting the partial values in col 3
+    RT = R
+    RT[:,3] = t[:,3]
+    return K[:3,:3], RT[:3,:]
+
 def vgg_RQ( P ):
     """
     From the Hallowed VGG https://www.robots.ox.ac.uk/~vgg/hzbook/code/
@@ -264,7 +289,7 @@ np.set_printoptions( precision=6, suppress=True )
 # Give me a K!
 K = np.eye(3)
 K[0,0] = K[1,1] = 2500 # focal length in px (12.5mm / 5umm) = what I'd expect for a modern 4MP camea and lens combo
-K[:2,2] = 0.0001 # Image centre
+K[:2,2] = 1001 # Image centre
 
 # Give me an R!
 R = setRot( np.deg2rad(-20), np.deg2rad(15), np.deg2rad(6) )
@@ -287,7 +312,7 @@ print( P )
 
 # Try out RQ Decomposition with various methods I've googled for over the last week...
 #algos = [ rq, rq2, gramSchmidt, vgg_KRT_from_P, directRQ ]
-algos = [ rq, rq2, directRQ ]
+algos = [ new_vgg, directRQ ]
 for algo in algos:
     print( "\nRunning '{}'".format( algo.__name__ ) )
 
