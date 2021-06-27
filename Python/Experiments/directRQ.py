@@ -282,56 +282,56 @@ def directRQ( P, axis_x=1., axis_y=1., axis_z=1. ):
 
 
 # Lets see if any of these work...
+if( __name__ == '__main__' ):
+    # form an aproximatly correct P matrix, by K x RT, with realistic K and RT components
+    np.set_printoptions( precision=6, suppress=True )
 
-# form an aproximatly correct P matrix, by K x RT, with realistic K and RT components
-np.set_printoptions( precision=6, suppress=True )
+    # Give me a K!
+    K = np.eye(3)
+    K[0,0] = K[1,1] = 2500 # focal length in px (12.5mm / 5umm) = what I'd expect for a modern 4MP camea and lens combo
+    K[:2,2] = 1001 # Image centre
 
-# Give me a K!
-K = np.eye(3)
-K[0,0] = K[1,1] = 2500 # focal length in px (12.5mm / 5umm) = what I'd expect for a modern 4MP camea and lens combo
-K[:2,2] = 1001 # Image centre
+    # Give me an R!
+    R = setRot( np.deg2rad(-20), np.deg2rad(15), np.deg2rad(6) )
 
-# Give me an R!
-R = setRot( np.deg2rad(-20), np.deg2rad(15), np.deg2rad(6) )
+    # test othonormality
+    for i in range( 3 ):
+        print( np.linalg.norm( R[i,:] ) )
 
-# test othonormality
-for i in range( 3 ):
-    print( np.linalg.norm( R[i,:] ) )
+    # Give me a T!
+    t = np.asarray( [ 305, 1822, 305 ] ).reshape( 3, 1 )
 
-# Give me a T!
-t = np.asarray( [ 305, 1822, 305 ] ).reshape( 3, 1 )
+    # Give me a P!
+    RT = np.hstack( (R,t) )
+    P = np.dot( K, RT )
+    P = np.vstack( (P, np.asarray([[0,0,0,1]])) )
+    print( "Test configuration:" )
+    print( K )
+    print( RT )
+    print( P )
 
-# Give me a P!
-RT = np.hstack( (R,t) )
-P = np.dot( K, RT )
-P = np.vstack( (P, np.asarray([[0,0,0,1]])) )
-print( "Test configuration:" )
-print( K )
-print( RT )
-print( P )
+    # Try out RQ Decomposition with various methods I've googled for over the last week...
+    #algos = [ rq, rq2, gramSchmidt, vgg_KRT_from_P, directRQ ]
+    algos = [ new_vgg, directRQ ]
+    for algo in algos:
+        print( "\nRunning '{}'".format( algo.__name__ ) )
 
-# Try out RQ Decomposition with various methods I've googled for over the last week...
-#algos = [ rq, rq2, gramSchmidt, vgg_KRT_from_P, directRQ ]
-algos = [ new_vgg, directRQ ]
-for algo in algos:
-    print( "\nRunning '{}'".format( algo.__name__ ) )
-
-    try:
-        K_, RT_ = algo( P )
-        print( K_ )
-        print( RT_ )
-    except:
-        print( "That's a Nope" )
-
-    else:
-        print( "Intrinsic closeness:" )
         try:
-            print( K_ - K )
-        except ValueError:
-            print( "error", K_.shape )
+            K_, RT_ = algo( P )
+            print( K_ )
+            print( RT_ )
+        except:
+            print( "That's a Nope" )
 
-        print( "Extrinsic closeness:" )
-        try:
-            print( RT_ - RT )
-        except ValueError:
-            print( "error", RT_.shape )
+        else:
+            print( "Intrinsic closeness:" )
+            try:
+                print( K_ - K )
+            except ValueError:
+                print( "error", K_.shape )
+
+            print( "Extrinsic closeness:" )
+            try:
+                print( RT_ - RT )
+            except ValueError:
+                print( "error", RT_.shape )
