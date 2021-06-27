@@ -635,11 +635,25 @@ P_A, P_B = computePair( A, B, matches[ (A, B,) ], frames, cams[A], cams[B], 42 )
 
 from directRQ import new_vgg
 
-print( "Decomposing 'B'" )
+print( "Decomposing 'Right' Projection Matrix" )
 K, RT = new_vgg( P_B )
 
-pprint(K)
-pprint(RT)
+print( "Intrinsics" )
+print(K)
+
+print( "Extrinsics" )
+print(RT)
+
+# Inital test reconstructs M0->M2 as 0.0694 units.  should be 240mm.  suggests scale = 240.0 / 0.0694 = 3458.2
+scale = 3458.21325
+RT[:3,3] *= scale
+P_B_s = np.dot( K, RT )
+P = np.vstack( [P_B_s, [0., 0., 0., 1.]] )
+
+print( "Solved and scaled Projectioin matrix" )
+print( P )
+
+print( "Baseline length: {}".format( np.linalg.norm( RT[:,3] ) ) )
 
 print( "Testing Reconstructions" )
 pairs = makeMatchList( A, B, matches[ (A, B,) ], frames )[:7*5]
@@ -648,7 +662,7 @@ b2d = []
 for a,b in pairs:
     a2d.append(a)
     b2d.append(b)
-x3ds = linear_triangulation( a2d, b2d, P_A, P_B )
+x3ds = np.asarray( linear_triangulation( a2d, b2d, P_A, P ), dtype=np.float32 )[:3,:]
 
 import matplotlib.pyplot as plt
 
@@ -656,12 +670,20 @@ fig = plt.figure()
 fig.suptitle( "3D Reconstruction", fontsize=16 )
 ax = fig.gca( projection="3d" )
 
-for i, col in enumerate( [ "r.", "g.", "b.", "c.", "m.", "y.", "k." ] ):
-    ax.plot( x3ds[0][i*5:(i+1)*5], x3ds[1][i*5:(i+1)*5], x3ds[2][i*5:(i+1)*5], col )
-
 ax.set_xlabel( "X-axis" )
 ax.set_ylabel( "Y-axis" )
 ax.set_zlabel( "Z-axis" )
+
+for i, col in enumerate( [ "r.", "g.", "b.", "c.", "m.", "y.", "k." ] ):
+    in_ =  i    * 5
+    out = (i+1) * 5
+    
+    ax.plot( x3ds[0,in_:out], x3ds[1,in_:out], x3ds[2,in_:out], col )
+
+    M1 = x3ds[ :, in_ ]
+    M2 = x3ds[ :, in_ + 2 ]
+
+    print( "T length: {}".format( np.linalg.norm( M2 - M1 ) ) )
 
 plt.show()
 
