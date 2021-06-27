@@ -296,7 +296,7 @@ def projectionsFromMatrix( E ):
         E (mat34): The Essential matrix
 
     Returns:
-        Ps (4 mat34s): The 4 possible Projection matrixs
+        Ps (4 mat34s): The 4 possible Projection matrices
     """
     U, s, V_T = np.linalg.svd( E )
 
@@ -312,9 +312,9 @@ def projectionsFromMatrix( E ):
     u3 = U[ :, 2 ].reshape( (3, 1) )
 
     # Four permutations - or have I missed something?
-    P_1 = np.hstack( (np.dot( np.dot( U, W ), V_T ), u3) )
-    P_2 = np.hstack( (np.dot( np.dot( U, W ), V_T ), -u3) )
-    P_3 = np.hstack( (np.dot( np.dot( U, W.T ), V_T ), u3) )
+    P_1 = np.hstack( (np.dot( np.dot( U, W   ), V_T ),  u3) )
+    P_2 = np.hstack( (np.dot( np.dot( U, W   ), V_T ), -u3) )
+    P_3 = np.hstack( (np.dot( np.dot( U, W.T ), V_T ),  u3) )
     P_4 = np.hstack( (np.dot( np.dot( U, W.T ), V_T ), -u3) )
 
     return [ P_1, P_2, P_3, P_4 ]
@@ -344,6 +344,44 @@ def makeMatchList( A, B, frame_idxs, frames ):
             matches.append( [ x2ds[ A_si + A_order[i] ], x2ds[ B_si + B_order[i] ] ] )
 
     return matches
+
+def makeEquations( matches ):
+    """
+    Args:
+        matches (list): list of pairs of corresponding detections
+
+    Returns:
+        List of Equations to form AX=0 problem (Kroniker)
+
+    """
+    Es = []
+    for A2d, B2d in matches:
+        u , v , _ = A2d # ignore bogo radius!
+        u_, v_, _ = B2d
+        Es.append( [u*u_, u*v_, u, v*u_, v*v_, v, u_, v_, 1] )
+
+    return np.asarray( Es, dtype=FLOAT_T )
+
+def testFmat( F, matches ):
+    """
+    Test a Fundamental or Essential matrix by computing epipoles and testing a known correspondence
+
+    Args:
+        F (mat33): The Matrix to test
+        matches (list): list of pairs of corresponding detections
+    """
+    u,  v , _ = matches[0][0]
+    u_, v_, _ = matches[0][1]
+    x  = np.asarray( [u,v,1], dtype=FLOAT_T )
+    x_ = np.asarray( [u_,v_,1], dtype=FLOAT_T )
+    zero = np.dot( np.dot(x_, F), x )
+    epl = np.dot( x, F ) # F(x) -> epipolar line of x'
+
+    if( np.linalg.det(F) > 1e-8 ):
+        print( "Unacceptable Determinant!" )
+
+    print( "x:{:.3f},{:.3f} x':{:.3f},{:.3f} epl [{:.5f}, {:.5f}, {:.5f}] Ferr {:.5f}\n".format(
+        u, v, u_, v_, *epl, zero ) )
 
 def computePair( A, B, frame_idxs, frames, cam_A, cam_B, clamp, force_eigen=False ):
     """ OK solve the fundamental matrix I guess....
@@ -377,19 +415,12 @@ def computePair( A, B, frame_idxs, frames, cam_A, cam_B, clamp, force_eigen=Fals
     P_A = cam_A.P
     P_B = cam_B.P
 
-    # Make pairwise matches
+    # make Equations
     matches = makeMatchList( A, B, frame_idxs, frames )
-
-    # assemble the equations
-    Es = []
-    for A2d, B2d in matches:
-        u , v , _ = A2d # ignore bogo radius!
-        u_, v_, _ = B2d
-        Es.append( [u*u_, u*v_, u, v*u_, v*v_, v, u_, v_, 1] )
+    Es = makeEquations( matches )
 
     # SVD method
-    print( "solving {} Equations".format( len( Es ) ) )
-    Es = np.asarray( Es, dtype=FLOAT_T )
+    print( "solving {} Equations".format( Es.shape[0] ) )
     U, s, V_T = np.linalg.svd( Es )
     Fa = V_T[:,-1].reshape( (3,3) ) # F aprox
     
@@ -403,25 +434,10 @@ def computePair( A, B, frame_idxs, frames, cam_A, cam_B, clamp, force_eigen=Fals
     D = np.diag( s )
     D[2,2] = 0
 
-    #F = np.dot( np.dot( U, D ), V_T )
-    F = np.dot( U, np.dot( D, V_T ) )
-
-    # Normalize?
-    #F /= F[2,2]
+    F = np.dot( np.dot( U, D ), V_T )
 
     # test matrix's plausibility ?
-    u,  v , _ = matches[0][0]
-    u_, v_, _ = matches[0][1]
-    x  = np.asarray( [u,v,1], dtype=FLOAT_T )
-    x_ = np.asarray( [u_,v_,1], dtype=FLOAT_T )
-    zero = np.dot( np.dot(x_, F), x )
-    epl = np.dot( x, F ) # F(x) -> epipolar line of x'
-
-    if( np.linalg.det(F) > 1e-8 ):
-        print( "Unacceptable Determinant!" )
-
-    print( "x:{:.3f},{:.3f} x':{:.3f},{:.3f} epl [{:.5f}, {:.5f}, {:.5f}] Ferr {:.5f}\n".format(
-        u, v, u_, v_, *epl, zero ) )
+    # testFmat(F,matches)
 
     # get possible solutions
     P_Bs = projectionsFromMatrix( F )
@@ -430,10 +446,10 @@ def computePair( A, B, frame_idxs, frames, cam_A, cam_B, clamp, force_eigen=Fals
     a2d, b2d = matches[ 0 ]
     a2d[2] = b2d[2] = 1.
 
-    # Test point is reconstructed in a plausable place
+    # Test point is reconstructed in a plausible place
     P_B_computed = None
     for P in P_Bs:
-        recon = triangulatePoint( a2d, b2d, P_A, P )
+        recon = triangulatePoint( a2d, b2d, P_A[:3,:], P )
 
         # if it's behind A, that's a no-go
         if( recon[2] < 0. ):
@@ -444,17 +460,21 @@ def computePair( A, B, frame_idxs, frames, cam_A, cam_B, clamp, force_eigen=Fals
 
         if( B_pos[2] > 0. ):
             P_B_computed = P
-            
+
     if( P_B_computed is None ):
         print( "Unable to find valid P_B" )
+    else:
+        P_B = np.vstack( [P_B_computed, [0., 0., 0., 1.]] )
 
     return P_A, P_B
 
 def triangulatePoint( a2d, b2d, P_A, P_B ):
     """
-    # ???
+    Taken from https://github.com/alyssaq/3Dreconstruction for testing
+    I'd rather write my own to fully understand the problem
+
     Args:
-        a2s  (vec3): detection image coordinate in camera A
+        a2d  (vec3): detection image coordinate in camera A
         b2d  (vec3): detection image coordinate in camera B
         P_A (mat34): Projection matrix A
         P_B (mat34): Projection matrix B
@@ -521,8 +541,63 @@ def stereoCalibrate( pairs, groups, frames, matches, cams, clamp ):
 
     return new_groups
 
+def initalizeCalibration( frames, cameras, cams, matches, pair_counts, goal_frames ):
+    # cam grouping
+    ungrouped = list( cameras )
+    cam_groups = []
+    all_cams_grouped = False
+
+    # sanity testing
+    strikes = 3
+    last_state = 0
+
+    print( "Merging pairs to initial estimate" )
+    while ( (not all_cams_grouped) and (strikes > 0) ):
+        stereo_tasks, ungrouped = findGoodMarrage( pair_counts, cameras, ungrouped, cam_groups )
+        cam_groups = stereoCalibrate( stereo_tasks, cam_groups, frames, matches, cams, goal_frames )
+        print( "Cal'd Cam Groups: {}, leftover cameras: {}\n".format( cam_groups, ungrouped ) )
+        if (len( cam_groups ) == 1):
+            all_cams_grouped = True
+
+        # Force termination in unsolvable camera setup
+        state = hash( (ungrouped,) )
+        print( state )
+        if( state == last_state ):
+            strikes -= 1
+        last_state = state
+
+    if( not all_cams_grouped ):
+        print( "degenerate!" )
 
 ###########################################################################################
+
+def linear_triangulation(p1, p2, m1, m2):
+    """
+    Taken from https://github.com/alyssaq/3Dreconstruction for testing
+    I'd rather write my own to fully understand the problem
+
+    Linear triangulation (Hartley ch 12.2 pg 312) to find the 3D point X
+    where p1 = m1 * X and p2 = m2 * X. Solve AX = 0.
+    :param p1, p2: 2D points in homo. or catesian coordinates. Shape (3 x n)
+    :param m1, m2: Camera matrices associated with p1 and p2. Shape (3 x 4)
+    :returns: 4 x n homogenous 3d triangulated points
+    """
+    num_points = len( p1 )
+    res = np.ones((4, num_points))
+
+    for i in range(num_points):
+        A = np.asarray([
+            (p1[i][0] * m1[2, :] - m1[0, :]),
+            (p1[i][1] * m1[2, :] - m1[1, :]),
+            (p2[i][0] * m2[2, :] - m2[0, :]),
+            (p2[i][1] * m2[2, :] - m2[1, :])
+        ])
+
+        _, _, V = np.linalg.svd(A)
+        X = V[-1, :4]
+        res[:, i] = X / X[3]
+
+    return res
 
 # Todo: So much... :(
 frames=[]
@@ -531,38 +606,68 @@ with open( os.path.join( DATA_PATH, "calibration.pik" ), "rb" ) as fh:
 
 num_frames = len( frames )
 
-# Try using the Camera Nodes I started work on ages ago...
+if( num_frames < 20 ):
+    print( "Not enough MoCap to Calibrate from" )
+    exit()
+
+# Label Frames
+GOAL_FRAMES = 125
+step = int( num_frames / GOAL_FRAMES )
+start = 0
+
+print( "Labelling {} frames, seeking {} wands per camera".format( num_frames, GOAL_FRAMES ) )
+
+counts, matches, last_idx = buildCaliData( frames, GOAL_FRAMES, start, step )
+pair_counts, cam_idxs = matchReport( matches )
+
+num_cams = len( cam_idxs )
+cam_list = sorted( list( cam_idxs ) )
+
+print( "Calibrating with {} cameras: {}\n".format( num_cams, counts ) )
+
+# Initialize all cameras
 root_node = Nodes.factory( Nodes.TYPE_ROOT )
+cams = [ Nodes.factory( Nodes.TYPE_CAMERA, name="Cam_{:0<2}".format( i ), parent=root_node ) for i in range( max( cam_list ) ) ]
 
-if( num_frames > 0 ):
+# Testing solving the Fundamental Mat for a single pair of cameras
+A, B = 0, 1
+P_A, P_B = computePair( A, B, matches[ (A, B,) ], frames, cams[A], cams[B], 42 )
+
+from directRQ import new_vgg
+
+print( "Decomposing 'B'" )
+K, RT = new_vgg( P_B )
+
+pprint(K)
+pprint(RT)
+
+print( "Testing Reconstructions" )
+pairs = makeMatchList( A, B, matches[ (A, B,) ], frames )[:7*5]
+a2d = []
+b2d = []
+for a,b in pairs:
+    a2d.append(a)
+    b2d.append(b)
+x3ds = linear_triangulation( a2d, b2d, P_A, P_B )
+
+import matplotlib.pyplot as plt
+
+fig = plt.figure()
+fig.suptitle( "3D Reconstruction", fontsize=16 )
+ax = fig.gca( projection="3d" )
+
+for i, col in enumerate( [ "r.", "g.", "b.", "c.", "m.", "y.", "k." ] ):
+    ax.plot( x3ds[0][i*5:(i+1)*5], x3ds[1][i*5:(i+1)*5], x3ds[2][i*5:(i+1)*5], col )
+
+ax.set_xlabel( "X-axis" )
+ax.set_ylabel( "Y-axis" )
+ax.set_zlabel( "Z-axis" )
+
+plt.show()
 
 
-    GOAL_FRAMES = 125
-    step = int( num_frames / GOAL_FRAMES )
-    start = 0
+# Prime the calibration ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#initalizeCalibration( frames, cam_idxs, cams, matches, pair_counts, GOAL_FRAMES )
 
-    print( "Labelling {} frames, seeking {} wands per camera".format( num_frames, GOAL_FRAMES ) )
-
-    # Prime the calibration with approx matching
-    counts, matches, last_idx = buildCaliData( frames, GOAL_FRAMES, start, step )
-    pair_counts, cam_idxs = matchReport( matches )
-    num_cams = len( cam_idxs )
-
-    ungrouped = sorted( list( cam_idxs ) )
-    cam_groups = []
-    all_cams_grouped = False
-
-    # Initialize all cameras
-    cams = [ Nodes.factory( Nodes.TYPE_CAMERA, name="Cam_{:0<2}".format( i ), parent=root_node ) for i in range( max( ungrouped ) ) ]
-
-    print( "Calibrating {} cameras: {}\n".format( num_cams, counts ) )
-    print( "Merging pairs to inital estimate" )
-    while( not all_cams_grouped ):
-        stereo_tasks, ungrouped = findGoodMarrage( pair_counts, cam_idxs, ungrouped, cam_groups )
-        cam_groups = stereoCalibrate( stereo_tasks, cam_groups, frames, matches, cams, GOAL_FRAMES )
-        print( "Cal'd Cam Groups: {}, leftover cameras: {}\n".format( cam_groups, ungrouped ) )
-        if( len( cam_groups ) == 1 ):
-            all_cams_grouped = True
-
-    # Refine calibration, openCv PnP ?
+# Refine calibration, openCv PnP / Bundle?
 
