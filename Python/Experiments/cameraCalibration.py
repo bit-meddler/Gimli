@@ -27,9 +27,11 @@ sys.path.append( CODE_PATH )
 
 from collections import Counter, defaultdict
 from copy import deepcopy
-import numpy as np
 import pickle
 from pprint import pprint
+
+import numpy as np
+import cv2
 
 from Core.labelling import labelWandFrame
 from Core.math3D import FLOAT_T
@@ -571,7 +573,7 @@ def initalizeCalibration( frames, cameras, cams, matches, pair_counts, goal_fram
 
 ###########################################################################################
 
-def linear_triangulation(p1, p2, m1, m2):
+def linear_triangulation(m1, m2, p1, p2):
     """
     Taken from https://github.com/alyssaq/3Dreconstruction for testing
     I'd rather write my own to fully understand the problem
@@ -599,6 +601,108 @@ def linear_triangulation(p1, p2, m1, m2):
 
     return res
 
+def cvTriangulate( P_A, P_B, a2ds, b2ds ):
+    """
+    Wrap cv2.triangulate and deal with formating my inputs and normalizing the return
+    Args:
+        P_A (mat44): 'Left' camera Projection matrix
+        P_B (mat44): 'Right' camera Projection matrix
+        a2ds (ndarray): nx3 list of 'left' camera points
+        b2ds (ndarray): nx3 list of 'right' camera points
+
+    Returns:
+        x3ds (ndarray): nx3 array of 3d reconstructions
+    """
+    cv3d = cv2.triangulatePoints( P_A[ :3, : ], P_B[ :3, : ], a2ds.T[ :2, : ], b2ds.T[ :2, : ] )
+    cv3d = cv3d.astype( np.float32 )
+    cv3d /= cv3d[ 3, : ]  # normalize
+    return cv3d[ :3, : ]  # drop the w component
+
+
+def calibrateFrom3d( camera, x3ds, x2ds ):
+    """
+    use cv2 'calibrateCamera' or 'solvePnP' to solve the K, RT, and distortion of a camera based on the
+    3d:2d correspondences of x3ds and x2ds which are in lockstep
+
+    Args:
+        camera (Node:camera): The camera object we are solving
+        x3ds (ndarray): Nx3 array of 3D points
+        x2ds (ndarray): Nx2 array of 2d detections in camera coordinates
+
+    Returns:
+
+    """
+    calib_flags  = cv2.CALIB_FIX_ASPECT_RATIO|cv2.CALIB_FIX_K3|cv2.CALIB_ZERO_TANGENT_DIST
+    calib_flags |= cv2.CALIB_USE_INTRINSIC_GUESS # flag that we're priming the K
+    #calib_flags |= cv2.CALIB_FIX_PRINCIPAL_POINT # Lock the PP for this test
+    distortion = np.asarray( [camera.k1, camera.k2, 0, 0 ,0] )
+    obj_pts = np.asarray( [x3ds], dtype=np.float32 )
+    img_pts = np.asarray( [x2ds], dtype=np.float32 )
+    rms_errro, K, dist_coefs, rvecs, tvecs = cv2.calibrateCamera( obj_pts, img_pts, (2, 2), camera.K, distortion, flags=calib_flags )
+    R = cv2.Rodrigues( np.array( rvecs[ 0 ] ) )[ 0 ]
+    T = np.array( tvecs[0], dtype=np.float32 )
+    RT = np.hstack( (R, T) )
+    P = np.dot( K, RT )
+
+    return rms_errro, P
+
+def scoreWands( PA, PB, a2ds, b2ds, inlyers=None, triple=(0,1,2), ratio=2.0, wand_len=240.0, stride=5 ):
+    """
+    Attempt to 'score' the PB matrix based on how close to the 'real' size of wand reconstructions are.
+    Reconstruct the correspondences (a2ds,b2ds) using the Projection Mats PA, PB.
+    for each stride (number of dots on a wand, expects 5 or 3) test the wand's triple.
+    the 0-1:1-2 ratio should be close to ratio.
+    the length 0-2 should be close to wand_len.
+    collect lengths of wands with an acceptable ratio
+    throw away the top and botom quartiles (bogus reconstructions)
+    compute the scale factor that the avg. lengths are from wand_len.
+
+    TODO: make this more RANSACy.  note which frames are bad and drop them.
+
+    Args:
+        PA (mat44): 'Left' camera Projection matrix
+        PB (mat44): 'Right' camera Projection matrix
+        a2ds (ndarray): nx3 list of 'left' camera points
+        b2ds (ndarray): nx3 list of 'right' camera points
+        inlyers (list): list of indexes of good frames(?)
+        triple (tuple): Tuple of indexs of wand markers that satisfy A-B--C  2AB = BC
+        ratio (float): ratio of the triple
+        wand_len (float): expected length of wand from A-C
+        stride (int): Number of markers on a wand Will be 5 or 3 for this method to work
+
+    Returns:
+        score (float): The scale factor the avg. reconstructed wand length is away from the ideal
+        inlyers (list): List of indexes we thing are good to optimize with
+    """
+    inlyers = inlyers or list(range(len(a2ds)))
+    x3ds = cv2.triangulatePoints( PA[:3,:], PB[:3,:], a2ds.T[:2,inlyers], b2ds.T[:2,inlyers] )
+    x3ds /= x3ds[3,:]
+    #x3ds = linear_triangulation( PA, PB, a2d, b2d)
+    num_wands = x3ds.shape[1] // stride
+    lens = []
+
+    for i in range( num_wands ):
+        n = i * stride
+        M0 = x3ds[:,n+triple[0]]
+        M1 = x3ds[:,n+triple[1]]
+        M2 = x3ds[:,n+triple[2]]
+
+        ratio_score = np.abs( ratio - np.linalg.norm( M2 - M1 ) / np.linalg.norm( M1 - M0 ) )
+        t_length = np.linalg.norm( M2 - M0 )
+        #print( "{: >2} T-len {} T-Ratio {}".format( i, t_length, ratio_score ) )
+        if( ratio_score < 0.25 ):
+            lens.append( t_length )
+
+    lens = np.asarray( sorted( lens ) )
+    pcs = len(lens) // 4
+    trusted = lens[pcs:-pcs]
+    wand_sz = np.mean( trusted )
+    print( "Avg. Reconstructed wand size {}".format( wand_sz ) )
+    score = wand_len / wand_sz
+    
+    return score, inlyers
+
+
 # Todo: So much... :(
 frames=[]
 with open( os.path.join( DATA_PATH, "calibration.pik" ), "rb" ) as fh:
@@ -611,7 +715,7 @@ if( num_frames < 20 ):
     exit()
 
 # Label Frames
-GOAL_FRAMES = 125
+GOAL_FRAMES = 160
 step = int( num_frames / GOAL_FRAMES )
 start = 0
 
@@ -631,6 +735,9 @@ cams = [ Nodes.factory( Nodes.TYPE_CAMERA, name="Cam_{:0<2}".format( i ), parent
 
 # Testing solving the Fundamental Mat for a single pair of cameras
 A, B = 0, 1
+
+print( "Computing F for pair {} {} using {} correspondence frames".format( A, B, len( matches[ (A, B,) ] ) ) )
+
 P_A, P_B = computePair( A, B, matches[ (A, B,) ], frames, cams[A], cams[B], 42 )
 
 from directRQ import new_vgg
@@ -644,25 +751,61 @@ print(K)
 print( "Extrinsics" )
 print(RT)
 
-# Inital test reconstructs M0->M2 as 0.0694 units.  should be 240mm.  suggests scale = 240.0 / 0.0694 = 3458.2
-scale = 3458.21325
-RT[:3,3] *= scale
-P_B_s = np.dot( K, RT )
-P = np.vstack( [P_B_s, [0., 0., 0., 1.]] )
+P = np.vstack( (np.dot( K, RT ), [0., 0., 0., 1.]) )
 
-print( "Solved and scaled Projectioin matrix" )
-print( P )
+WANDS = 55
 
-print( "Baseline length: {}".format( np.linalg.norm( RT[:,3] ) ) )
-
-print( "Testing Reconstructions" )
-pairs = makeMatchList( A, B, matches[ (A, B,) ], frames )[:7*5]
+LIMIT = WANDS * 5
+pairs = makeMatchList( A, B, matches[ (A, B,) ], frames )[:LIMIT]
 a2d = []
 b2d = []
 for a,b in pairs:
     a2d.append(a)
     b2d.append(b)
-x3ds = np.asarray( linear_triangulation( a2d, b2d, P_A, P ), dtype=np.float32 )[:3,:]
+    
+xA = np.asarray( a2d, dtype=np.float32 )
+xB = np.asarray( b2d, dtype=np.float32 )
+
+scale = 1.0
+good_wands = None
+
+for i in range( 1, 6 ):
+    print( "Optimizing baseline round {}".format( i ) )
+    TRT = RT.copy()
+    TRT[:3,3] *= scale
+    print( "Baseline length: {}".format( np.linalg.norm( TRT[:,3] ) ) )
+    P = np.vstack( (np.dot( K, TRT ), [0., 0., 0., 1.]) )
+    score, good_wands = scoreWands( P_A, P, xA, xB, inlyers=good_wands )
+    ratio = 1.0 - score
+    print( "Wand length score {}".format( ratio ) )
+    scale *= score
+    if( np.abs( ratio ) < 1e-8 ):
+        break
+
+print( "Solved and scaled Projection matrix" )
+print( P )
+
+K, RT = new_vgg( P )
+
+print( "Intrinsics" )
+print(K)
+
+print( "Extrinsics" )
+print(RT)
+
+print( "Testing Reconstructions" )
+cv3d = cvTriangulate( P_A, P, xA, xB )
+
+print( "Now trying a poor man's Bundle adjust" )
+last_error = 666.
+for i in range( 5 ):
+    error, new_P = calibrateFrom3d( cams[B], cv3d.T, xB[:,:2] )
+    score, good_wands = scoreWands( P_A, new_P, xA, xB )
+    print( "Calibration Error: {} Wand length score {}".format( error, 1.0 - score ) )
+    if( error < last_error ):
+        P = new_P
+        last_error = error
+    cv3d = cvTriangulate( P_A, P, xA, xB )
 
 import matplotlib.pyplot as plt
 
@@ -674,16 +817,24 @@ ax.set_xlabel( "X-axis" )
 ax.set_ylabel( "Y-axis" )
 ax.set_zlabel( "Z-axis" )
 
-for i, col in enumerate( [ "r.", "g.", "b.", "c.", "m.", "y.", "k." ] ):
+cols = [ "r.", "g.", "b.", "c.", "m.", "y.", "k." ]
+num_cols = len( cols )
+lens = []
+
+for i in range ( WANDS ):
+    col = cols[ i %  num_cols ]
     in_ =  i    * 5
     out = (i+1) * 5
+
+    M1 = cv3d[ :, in_ ]
+    M2 = cv3d[ :, in_ + 2 ]
+    t_length = np.linalg.norm( M2 - M1 )
+
+    #print( "{: >2} T length: {}".format( i, t_length ) )
+    lens.append( t_length )
     
-    ax.plot( x3ds[0,in_:out], x3ds[1,in_:out], x3ds[2,in_:out], col )
-
-    M1 = x3ds[ :, in_ ]
-    M2 = x3ds[ :, in_ + 2 ]
-
-    print( "T length: {}".format( np.linalg.norm( M2 - M1 ) ) )
+    if( True ):
+        ax.plot( cv3d[ 0, in_:out ], cv3d[ 1, in_:out ], cv3d[ 2, in_:out ], col )
 
 plt.show()
 

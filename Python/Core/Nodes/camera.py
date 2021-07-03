@@ -30,8 +30,9 @@ class Camera( Node ):
     """
     TYPE_INFO = TYPE_CAMERA
     DEFAULT_NAME = "Camera"
+    INITIAL_SPACING = 10.0 # uncalibrated cameras are spaced apart in X
 
-    def __init__( self, name, parent=None ):
+    def __init__( self, name, parent=None, c_id=None ):
         super( Camera, self ).__init__( name, parent )
         # Extrinsics - RT -----------------------------------------------
         # Internal
@@ -39,19 +40,24 @@ class Camera( Node ):
         self.R  = np.eye( 3, dtype=FLOAT_T )
         # Human
         self.position = np.zeros( (3,1), dtype=FLOAT_T )
+        if( c_id is not None ):
+            self.position[0] = int(c_id) * self.INITIAL_SPACING
         self.orientation = [0.,0.,0.] # expects degrees, X, Y, Z rotation
 
         # Intrinsics - K ------------------------------------------------
         # Internal
         self.K  = np.eye( 3, dtype=FLOAT_T )
         # Human
-        self.pp = [0.,0.]
-        self.fovX = 0.
-        self.fovY = 0.
+        self.pp = [0.0,0.0]
+        self.fovX = 2.
+        self.fovY = 2.
         self.skew = 0.
 
         # Distortion
         self.k1 = self.k2 = 0.
+
+        # Compose inital Matrixes ----------------------------------------
+        self.formK()
 
         # Projection Matrix ----------------------------------------------
         self.P = self.genBlankP()
@@ -61,7 +67,7 @@ class Camera( Node ):
     def formK( self, apply=True ):
         K = np.asarray( [ [ self.fovX, self.skew, self.pp[0] ],
                           [         0, self.fovY, self.pp[1] ],
-                          [         0,         0,          1 ] ], dtype=FLOAT_T )
+                          [         0,         0,          1 ] ], dtype=np.float32 )
         if( apply ):
             self.K = K
 
@@ -83,7 +89,7 @@ class Camera( Node ):
         if( xR is not None ):
             R = np.asarray( xR, dtype=FLOAT_T )
         else:
-            R = self.formR( False )
+            R = self.R
 
         if( xT is not None ):
             T = np.asarray( xT, dtype=FLOAT_T )
