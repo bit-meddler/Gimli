@@ -619,7 +619,7 @@ def cvTriangulate( P_A, P_B, a2ds, b2ds ):
     return cv3d[ :3, : ]  # drop the w component
 
 
-def calibrateFrom3d( camera, x3ds, x2ds ):
+def calibrateFrom3d( camera, x3ds, x2ds, lock_pp=False, lock_f=False, lock_dist=False ):
     """
     use cv2 'calibrateCamera' or 'solvePnP' to solve the K, RT, and distortion of a camera based on the
     3d:2d correspondences of x3ds and x2ds which are in lockstep
@@ -632,9 +632,18 @@ def calibrateFrom3d( camera, x3ds, x2ds ):
     Returns:
 
     """
-    calib_flags  = cv2.CALIB_FIX_ASPECT_RATIO|cv2.CALIB_FIX_K3|cv2.CALIB_ZERO_TANGENT_DIST
+    calib_flags  = cv2.CALIB_FIX_ASPECT_RATIO | cv2.CALIB_FIX_K3 | cv2.CALIB_ZERO_TANGENT_DIST
     calib_flags |= cv2.CALIB_USE_INTRINSIC_GUESS # flag that we're priming the K
-    #calib_flags |= cv2.CALIB_FIX_PRINCIPAL_POINT # Lock the PP for this test
+
+    if( lock_pp ):
+        calib_flags |= cv2.CALIB_FIX_PRINCIPAL_POINT
+
+    if( lock_f ):
+        calib_flags |= cv2.CALIB_FIX_FOCAL_LENGTH
+
+    if( lock_dist) :
+        calib_flags |= cv2.CALIB_FIX_K1 | cv2.CALIB_FIX_K2
+
     distortion = np.asarray( [camera.k1, camera.k2, 0, 0 ,0] )
     obj_pts = np.asarray( [x3ds], dtype=np.float32 )
     img_pts = np.asarray( [x2ds], dtype=np.float32 )
@@ -646,7 +655,7 @@ def calibrateFrom3d( camera, x3ds, x2ds ):
 
     return rms_errro, P
 
-def scoreWands( PA, PB, a2ds, b2ds, inlyers=None, triple=(0,1,2), ratio=2.0, wand_len=240.0, stride=5 ):
+def scoreWands( x3ds, inlyers=None, triple=(0,1,2), ratio=2.0, wand_len=240.0, stride=5, discard_quatile=False ):
     """
     Attempt to 'score' the PB matrix based on how close to the 'real' size of wand reconstructions are.
     Reconstruct the correspondences (a2ds,b2ds) using the Projection Mats PA, PB.
@@ -660,28 +669,22 @@ def scoreWands( PA, PB, a2ds, b2ds, inlyers=None, triple=(0,1,2), ratio=2.0, wan
     TODO: make this more RANSACy.  note which frames are bad and drop them.
 
     Args:
-        PA (mat44): 'Left' camera Projection matrix
-        PB (mat44): 'Right' camera Projection matrix
-        a2ds (ndarray): nx3 list of 'left' camera points
-        b2ds (ndarray): nx3 list of 'right' camera points
+        x3ds (ndarray): Nx3 matrix of reconstructions of the wand
         inlyers (list): list of indexes of good frames(?)
         triple (tuple): Tuple of indexs of wand markers that satisfy A-B--C  2AB = BC
         ratio (float): ratio of the triple
         wand_len (float): expected length of wand from A-C
         stride (int): Number of markers on a wand Will be 5 or 3 for this method to work
+        discard_quatile (bool): should the top and bottom quartiles be rejected
 
     Returns:
         score (float): The scale factor the avg. reconstructed wand length is away from the ideal
         inlyers (list): List of indexes we thing are good to optimize with
     """
-    inlyers = inlyers or list(range(len(a2ds)))
-    x3ds = cv2.triangulatePoints( PA[:3,:], PB[:3,:], a2ds.T[:2,inlyers], b2ds.T[:2,inlyers] )
-    x3ds /= x3ds[3,:]
-    #x3ds = linear_triangulation( PA, PB, a2d, b2d)
-    num_wands = x3ds.shape[1] // stride
+    num_frames = x3ds.shape[1] // stride
     lens = []
 
-    for i in range( num_wands ):
+    for i in range( num_frames ):
         n = i * stride
         M0 = x3ds[:,n+triple[0]]
         M1 = x3ds[:,n+triple[1]]
@@ -691,15 +694,22 @@ def scoreWands( PA, PB, a2ds, b2ds, inlyers=None, triple=(0,1,2), ratio=2.0, wan
         t_length = np.linalg.norm( M2 - M0 )
         #print( "{: >2} T-len {} T-Ratio {}".format( i, t_length, ratio_score ) )
         if( ratio_score < 0.25 ):
-            lens.append( t_length )
+            lens.append( (i,t_length,) )
 
-    lens = np.asarray( sorted( lens ) )
-    pcs = len(lens) // 4
-    trusted = lens[pcs:-pcs]
-    wand_sz = np.mean( trusted )
-    print( "Avg. Reconstructed wand size {}".format( wand_sz ) )
+    lens = np.asarray( sorted( lens, key=lambda x: x[1] ) )
+
+    if( discard_quatile ):
+        pcs = len(lens) // 4
+        lens = lens[pcs:-pcs,:]
+
+    #print( lens )
+
+    wand_sz = np.mean( lens[:,1] )
+    #print( "Avg. Reconstructed wand size {}".format( wand_sz ) )
     score = wand_len / wand_sz
-    
+
+    inlyers = lens[:,0]
+
     return score, inlyers
 
 
@@ -740,10 +750,10 @@ print( "Computing F for pair {} {} using {} correspondence frames".format( A, B,
 
 P_A, P_B = computePair( A, B, matches[ (A, B,) ], frames, cams[A], cams[B], 42 )
 
-from directRQ import new_vgg
+from directRQ import new_vgg, directRQ
 
 print( "Decomposing 'Right' Projection Matrix" )
-K, RT = new_vgg( P_B )
+K, RT = directRQ( P_B )
 
 print( "Intrinsics" )
 print(K)
@@ -766,46 +776,56 @@ for a,b in pairs:
 xA = np.asarray( a2d, dtype=np.float32 )
 xB = np.asarray( b2d, dtype=np.float32 )
 
+x3ds = cvTriangulate( P_A, P, xA, xB )
+
 scale = 1.0
 good_wands = None
 
 for i in range( 1, 6 ):
-    print( "Optimizing baseline round {}".format( i ) )
-    TRT = RT.copy()
-    TRT[:3,3] *= scale
-    print( "Baseline length: {}".format( np.linalg.norm( TRT[:,3] ) ) )
-    P = np.vstack( (np.dot( K, TRT ), [0., 0., 0., 1.]) )
-    score, good_wands = scoreWands( P_A, P, xA, xB, inlyers=good_wands )
+    print( "Optimizing scene scale. round {}".format( i ) )
+    x3ds *= scale
+    score, good_wands = scoreWands( x3ds[:,:15], inlyers=good_wands, discard_quatile=False )
     ratio = 1.0 - score
     print( "Wand length score {}".format( ratio ) )
     scale *= score
-    if( np.abs( ratio ) < 1e-8 ):
+    if( np.abs( ratio ) < 1e-6 ):
         break
 
-print( "Solved and scaled Projection matrix" )
-print( P )
-
-K, RT = new_vgg( P )
-
-print( "Intrinsics" )
-print(K)
-
-print( "Extrinsics" )
-print(RT)
-
-print( "Testing Reconstructions" )
-cv3d = cvTriangulate( P_A, P, xA, xB )
-
-print( "Now trying a poor man's Bundle adjust" )
+print( "\nNow trying a poor man's Bundle adjust" )
 last_error = 666.
-for i in range( 5 ):
-    error, new_P = calibrateFrom3d( cams[B], cv3d.T, xB[:,:2] )
-    score, good_wands = scoreWands( P_A, new_P, xA, xB )
+scale = 1.0
+
+_pp = True
+_focal = True
+_dist = True
+CLAMP = -1
+for i in range( 10 ):
+    try:
+        error, new_P = calibrateFrom3d( cams[B], x3ds.T[:CLAMP,:], xB[:CLAMP,:2], lock_pp=_pp, lock_f=_focal, lock_dist=_dist )
+
+    except:
+        print( "CV2 Error" )
+        break
+
+    score, good_wands = scoreWands( x3ds )
+    scale *= score
+    Kn, RTn = directRQ( np.vstack( (new_P,[0.,0.,0.,1.]) ) )
     print( "Calibration Error: {} Wand length score {}".format( error, 1.0 - score ) )
+    print( Kn )
+    print( RTn )
+
     if( error < last_error ):
         P = new_P
         last_error = error
-    cv3d = cvTriangulate( P_A, P, xA, xB )
+        print( "Error reduced, accepting new params" )
+        cams[ B ].K = Kn
+
+    if( i > 5):
+        _focal = False
+
+    # Don't really have many tools to 'change' the calibration :S
+    x3ds = cvTriangulate( P_A, P, xA, xB )
+
 
 import matplotlib.pyplot as plt
 
@@ -826,15 +846,15 @@ for i in range ( WANDS ):
     in_ =  i    * 5
     out = (i+1) * 5
 
-    M1 = cv3d[ :, in_ ]
-    M2 = cv3d[ :, in_ + 2 ]
+    M1 = x3ds[ :, in_ ]
+    M2 = x3ds[ :, in_ + 2 ]
     t_length = np.linalg.norm( M2 - M1 )
 
     #print( "{: >2} T length: {}".format( i, t_length ) )
     lens.append( t_length )
     
     if( True ):
-        ax.plot( cv3d[ 0, in_:out ], cv3d[ 1, in_:out ], cv3d[ 2, in_:out ], col )
+        ax.plot( x3ds[ 0, in_:out ], x3ds[ 1, in_:out ], x3ds[ 2, in_:out ], col )
 
 plt.show()
 
