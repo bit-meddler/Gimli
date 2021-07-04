@@ -621,8 +621,11 @@ def cvTriangulate( P_A, P_B, a2ds, b2ds ):
 
 def calibrateFrom3d( camera, x3ds, x2ds, lock_pp=False, lock_f=False, lock_dist=False ):
     """
-    use cv2 'calibrateCamera' or 'solvePnP' to solve the K, RT, and distortion of a camera based on the
-    3d:2d correspondences of x3ds and x2ds which are in lockstep
+    use cv2 'calibrateCamera' to solve the K, RT, and CV model distortion of a camera based on the
+    3d:2d correspondences of x3ds and x2ds (which are in lockstep)
+
+    It's that FacePalm feeling... It turns out OpenCV can't handle the -1,1 NDC coordinate system we use
+    so we'll need to add the 'half width' of some fake image size to the 2ds, and then subtract it from the PP
 
     Args:
         camera (Node:camera): The camera object we are solving
@@ -644,13 +647,29 @@ def calibrateFrom3d( camera, x3ds, x2ds, lock_pp=False, lock_f=False, lock_dist=
     if( lock_dist) :
         calib_flags |= cv2.CALIB_FIX_K1 | cv2.CALIB_FIX_K2
 
+    # :(
+    halfwit = 8.
+    fake_size = (16,16) # int( halfwit * 2 )
+
+    # Get camera params to prime the calibration
     distortion = np.asarray( [camera.k1, camera.k2, 0, 0 ,0] )
+    camMat = camera.K.copy()
+    camMat[:2,2] += halfwit # Add the fake offset to stop it asserting
+
+    # Prepare the input data
     obj_pts = np.asarray( [x3ds], dtype=np.float32 )
-    img_pts = np.asarray( [x2ds], dtype=np.float32 )
-    rms_errro, K, dist_coefs, rvecs, tvecs = cv2.calibrateCamera( obj_pts, img_pts, (2, 2), camera.K, distortion, flags=calib_flags )
+    img_pts = np.asarray( [x2ds + halfwit ], dtype=np.float32 ) # detections get the fake offset as well
+
+    # calibrate
+    rms_errro, K, dist_coefs, rvecs, tvecs = cv2.calibrateCamera( obj_pts, img_pts, fake_size, camMat, distortion, flags=calib_flags )
+
+    # Get R, T, RT
     R = cv2.Rodrigues( np.array( rvecs[ 0 ] ) )[ 0 ]
     T = np.array( tvecs[0], dtype=np.float32 )
     RT = np.hstack( (R, T) )
+
+    K[:2,2] -= halfwit # Remove the fake offset to get us back to (-1,1)
+
     P = np.dot( K, RT )
 
     return rms_errro, P
@@ -798,21 +817,22 @@ scale = 1.0
 _pp = True
 _focal = True
 _dist = True
-CLAMP = -1
-for i in range( 10 ):
-    try:
-        error, new_P = calibrateFrom3d( cams[B], x3ds.T[:CLAMP,:], xB[:CLAMP,:2], lock_pp=_pp, lock_f=_focal, lock_dist=_dist )
+CLAMP = 30
+for i in range( 1, 4 ):
+    print( "Bungle Adjust round {: >2}".format( i ) )
+    # try:
+    error, new_P = calibrateFrom3d( cams[B], x3ds.T[:CLAMP,:], xB[:CLAMP,:2], lock_pp=_pp, lock_f=_focal, lock_dist=_dist )
 
-    except:
-        print( "CV2 Error" )
-        break
+    # except:
+    #     print( "CV2 Error" )
+    #     break
 
     score, good_wands = scoreWands( x3ds )
     scale *= score
     Kn, RTn = directRQ( np.vstack( (new_P,[0.,0.,0.,1.]) ) )
     print( "Calibration Error: {} Wand length score {}".format( error, 1.0 - score ) )
     print( Kn )
-    print( RTn )
+    #print( RTn )
 
     if( error < last_error ):
         P = new_P
@@ -820,8 +840,11 @@ for i in range( 10 ):
         print( "Error reduced, accepting new params" )
         cams[ B ].K = Kn
 
-    if( i > 5):
+    if( i > 5 ):
         _focal = False
+
+    if( i > 8 ):
+        _pp = False
 
     # Don't really have many tools to 'change' the calibration :S
     x3ds = cvTriangulate( P_A, P, xA, xB )
