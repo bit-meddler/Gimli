@@ -393,6 +393,7 @@ def computePair( A, B, frame_idxs, frames, cam_A, cam_B, clamp, force_eigen=Fals
             http://www.cse.psu.edu/~rtc12/CSE486/lecture19.pdf
 
         # Which is it E or F? I don't know the intrinsics initially, but hopefully we can refine them
+        # We do have a good 1st guess at the inital Ks though
 
         A note on notation, I'm writing e', P' etc as e_, P_, and it follows a
         P'' would be P__.  However I'm also keeping track of np.svd emitting V Transpose
@@ -438,11 +439,15 @@ def computePair( A, B, frame_idxs, frames, cam_A, cam_B, clamp, force_eigen=Fals
 
     F = np.dot( np.dot( U, D ), V_T )
 
+    # An alternate way of getting E is K2.T @ F @ K1
+    if( True ):
+        E = np.dot( cam_B.K.T, np.dot( F, cam_A.K) )
+
     # test matrix's plausibility ?
     # testFmat(F,matches)
 
     # get possible solutions
-    P_Bs = projectionsFromMatrix( F )
+    P_Bs = projectionsFromMatrix( E )
 
     # pick a point & make Homogenous
     a2d, b2d = matches[ 0 ]
