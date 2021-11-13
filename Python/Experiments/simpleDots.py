@@ -195,6 +195,8 @@ class Player( QtWidgets.QMainWindow ):
         # The data
         self.frames = []
         self.cameras = []
+        self.camera_current = -1
+        self.frame_current  = -1
 
         # Build UI
         self._buildUI()
@@ -366,7 +368,8 @@ class Player( QtWidgets.QMainWindow ):
                 f_idx += 1
                 strides, dets, labels = self.frames[ f_idx ]
 
-        print( f_idx )
+        self.frame_current = f_idx
+        self.camera_current = optimal
 
         h_w, h_h = self.dims[0] / 2, self.dims[1] / 2
         for (x_,y_,r) in dets[ strides[ optimal ] : strides[ optimal + 1 ] ]:
