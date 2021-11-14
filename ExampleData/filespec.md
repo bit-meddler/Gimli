@@ -14,6 +14,8 @@ the detection data (Centroids), and ID data.
 `strides, dets, labels = frames[ 0 ]`
 
 The `strides` describe what "slice" of the `dets` are detections for each camera.
+if `s_in` and `s_out` are the same, there are no detections for the given camera,
+and `s_out` minus `s_in` would give the number of detections. 
 
 ```
 num_cams = len( strides ) - 1

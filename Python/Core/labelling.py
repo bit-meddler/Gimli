@@ -203,16 +203,16 @@ def labelWand( dets, s_in, s_out, verbose=False ):
 def labelWandFrame( dets, strides ):
     """
     Labels the whole frame described by the dets array and the stride list.
-    ToDo: In the future this could be cheaply parallelized
+    ToDo: In the future this could be cheaply parallelized, but not today.
 
     Args:
-        dets: (ndarray) Nx2 array of dets for all cameras
-        strides: (ndarray) N+1 array of Stride in/out indexes for the cameras
+        dets     (ndarray): Nx2 array of dets for all cameras
+        strides  (ndarray): N+1 array of Stride in/out indexes for the cameras
 
     Returns:
         label data (tuple)
-            ids: (ndarray) Nx1 array of IDs in lock step the the dets,
-            report: (list) list of cameras that have been labelled on this frame
+            ids  (ndarray): Nx1 array of IDs in lock step the the dets,
+            report  (list): list of cameras that have been labelled on this frame
     """
     report = []
     ids = np.full( len( dets ), 0, dtype=ID_T )
