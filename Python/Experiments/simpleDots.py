@@ -327,6 +327,10 @@ class Player( QtWidgets.QMainWindow ):
     def _togGrid( self ):
         self._grid.setVisible( bool( self.chk_grid.isChecked() ) )
 
+    def _onCellsChange( self, idx ):
+        self._grid_cells = int( self._cmb_cells.itemText( idx ) )
+        self.updateGrid()
+
     def updateGrid( self ):
         path = QtGui.QPainterPath()
         cell_width, cell_height = self.dims[ 0 ] / self._grid_cells, self.dims[ 1 ] / self._grid_cells
@@ -407,7 +411,7 @@ class Player( QtWidgets.QMainWindow ):
         point_buts.addWidget( self.but_point_rem )
         tools.addLayout( point_buts )
 
-        # Mask list
+        # Point List
         self.tab_pts = QtWidgets.QTableWidget( self )
         self.tab_pts.setRowCount( 0 )
         self.tab_pts.setColumnCount( 3 )
@@ -417,6 +421,18 @@ class Player( QtWidgets.QMainWindow ):
         self.tab_pts.setColumnWidth( 2,  50 )
         tools.addWidget( self.tab_pts )
 
+        # Grid setup
+        grid_ctrl = QtWidgets.QHBoxLayout()
+        lab = QtWidgets.QLabel( "Num Bins:" )
+        grid_ctrl.addWidget( lab )
+
+        self._cmb_cells = QtWidgets.QComboBox( self )
+        self._cmb_cells.addItems( ["64", "32", "16", "8"] )
+        self._cmb_cells.setCurrentIndex( self._cmb_cells.findText( "16", QtCore.Qt.MatchFixedString ) )
+        grid_ctrl.addWidget( self._cmb_cells )
+
+        tools.addLayout( grid_ctrl )
+
         # Transformations
         xform_buts = QtWidgets.QHBoxLayout()
         self.but_move = QtWidgets.QPushButton( "Move Points" )
@@ -425,6 +441,7 @@ class Player( QtWidgets.QMainWindow ):
         self.but_auto = QtWidgets.QPushButton( "Animate Points" )
         self.but_auto.setCheckable( True )
         xform_buts.addWidget( self.but_auto )
+
         tools.addLayout( xform_buts )
 
         # drawing
@@ -463,7 +480,7 @@ class Player( QtWidgets.QMainWindow ):
         self.chk_tail.clicked.connect( self._togTail )
 
         open_action.triggered.connect( self.fileOpen )
-
+        self._cmb_cells.currentIndexChanged.connect( self._onCellsChange )
         self._canvas.sceneClicked.connect( self.addPoint )
 
         # set the drawing
