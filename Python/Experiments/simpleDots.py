@@ -415,7 +415,7 @@ class Player( QtWidgets.QMainWindow ):
         self.tab_pts = QtWidgets.QTableWidget( self )
         self.tab_pts.setRowCount( 0 )
         self.tab_pts.setColumnCount( 3 )
-        self.tab_pts.setHorizontalHeaderLabels( ["Point", "True ID", "Label ID"] )
+        self.tab_pts.setHorizontalHeaderLabels( ["Point", "True ID", "Labeled ID"] )
         self.tab_pts.setColumnWidth( 0, 120 )
         self.tab_pts.setColumnWidth( 1,  40 )
         self.tab_pts.setColumnWidth( 2,  50 )

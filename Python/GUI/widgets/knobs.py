@@ -1,5 +1,5 @@
 # 
-# Copyright (C) 2016~2021 The Gimli Project
+# Copyright (C) 2016~2022 The Gimli Project
 # This file is part of Gimli <https://github.com/bit-meddler/Gimli>.
 #
 # Gimli is free software: you can redistribute it and/or modify
@@ -134,6 +134,7 @@ class KnobInt( QtWidgets.QHBoxLayout ):
             desc: (str) Tooltip description
         """
         super( KnobInt, self ).__init__( parent )
+        self.setObjectName( "KI_" + desc )
         self.box = KEdit( "", parent )
         self.box.default = default
         self.slider = KSlider( parent )

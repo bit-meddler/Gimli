@@ -192,7 +192,7 @@ def vgg_KRT_from_P(P):
 
 def directRQ( P, axis_x=1., axis_y=1., axis_z=1. ):
     # 
-    # Copyright (C) 2016~2021 The Gimli Project
+    # Copyright (C) 2016~2022 The Gimli Project
     # This file is part of Gimli <https://github.com/bit-meddler/Gimli>.
     #
     # Gimli is free software: you can redistribute it and/or modify

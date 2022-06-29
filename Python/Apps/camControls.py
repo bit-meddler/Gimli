@@ -1,5 +1,5 @@
 # 
-# Copyright (C) 2016~2021 The Gimli Project
+# Copyright (C) 2016~2022 The Gimli Project
 # This file is part of Gimli <https://github.com/bit-meddler/Gimli>.
 #
 # Gimli is free software: you can redistribute it and/or modify
@@ -130,14 +130,14 @@ class QMain( QtWidgets.QMainWindow ):
 
         def quit( self ):
             """
-            Cleanly close the Network resources used by the thread, before terminating.
-
+            Cleanly close the Network resources used by the thread before terminating normally.
             """
             self.running = False
-            #self.dets_recv.close()
-            #self._zctx.term()
-            super( QMain.ArbiterListen, self ).quit()
 
+
+    APP_NAME = "Gimli Camera Controls"
+    LB_RATE_DATA = "Data fps: {: <3.2f}"
+    LB_RATE_DRAW = "Draw fps: {: <3.2f}"
 
     def __init__( self, parent ):
         """
@@ -149,9 +149,10 @@ class QMain( QtWidgets.QMainWindow ):
         self._app = parent # This could be QtWidgets.QApplication()?
 
         # app config
-        self._app.setApplicationName( "Gimli Camera Controls" )
+        self._app.setApplicationName( self.APP_NAME )
         self._app.setOrganizationName( "Gimli" )
         self._app.setOrganizationDomain( "" )
+        self.setWindowTitle( self.APP_NAME )
 
         screen, placement = self._getPrefDims()
 
@@ -263,10 +264,11 @@ class QMain( QtWidgets.QMainWindow ):
         self.scene_model.emitUpdate()
 
         # update watchers
+        self.status_fps_data.setText( self.LB_RATE_DATA.format(det_fps) )
         for obs in self.frame_observers:
             obs.update()
 
-        if( self.scene_model.frame_count % 10 == 0 ):
+        if( self.scene_model.frame_count % 100 == 0 ):
             log.info( "Got centroids @{:3.2f} fps: {}".format( det_fps, roid_count ) )
 
     def sendCNC( self, verb, noun, value=None ):
@@ -310,6 +312,9 @@ class QMain( QtWidgets.QMainWindow ):
             report = ", ".join( [ i.data() for i in indexes ] )
         log.info( "Selected: {}".format( report ) )
 
+    def recvFps( self, fps ):
+        self.status_fps_draw.setText( self.LB_RATE_DRAW.format( fps ) )
+
     # Action CBs
     def _newFileCB( self ):
         self.textEdit.setText( "" )
@@ -319,9 +324,10 @@ class QMain( QtWidgets.QMainWindow ):
 
     def _aboutHelpCB( self ):
         QtWidgets.QMessageBox.about( self, "About Gimli",
-                                     "Copyright (C) 2016~2021 The Gimli Project - GPLv3\n\n"
+                                     "Copyright (C) 2016 onwards, The Gimli Project - GPLv3\n\n"
                                      "Gimli is an Open Source Motion Capture system with an "
-                                     "acompanying Open Source MoCap Camera system. "
+                                     "accompanying Open Source MoCap Camera system built around the "
+                                     "Raspberry Pi platform."
                                      )
 
     # UI Assembly
@@ -331,9 +337,14 @@ class QMain( QtWidgets.QMainWindow ):
         self.status_progress.setRange( 0, 100 )
 
         self.status_lbl = QtWidgets.QLabel( "" )
+        self.status_fps_data = QtWidgets.QLabel( self.LB_RATE_DATA.format(0) )
+        self.status_fps_draw = QtWidgets.QLabel( self.LB_RATE_DRAW.format(0) )
 
-        self.status_bar.addPermanentWidget( self.status_progress, 0 )
         self.status_bar.addPermanentWidget( self.status_lbl, 0 )
+        self.status_bar.addPermanentWidget( self.status_progress, 0 )
+        # divider line?
+        self.status_bar.addPermanentWidget( self.status_fps_data, 0 )
+        self.status_bar.addPermanentWidget( self.status_fps_draw, 0 )
 
         self.setStatusBar( self.status_bar )
 
@@ -376,7 +387,7 @@ class QMain( QtWidgets.QMainWindow ):
         """
         Assemble the UI Components and attach to Data Model and Selection Model, Register relevant events
         """
-        self.setWindowTitle( "Main Window" )
+        self.setWindowTitle( self.APP_NAME )
 
         self.splash.showMessage( "Setting up Actions" )
         self._buildActions()
@@ -384,6 +395,7 @@ class QMain( QtWidgets.QMainWindow ):
         self.splash.showMessage( "Building Menu & Tool bars" )
         self._buildMenuBar()
         self._buildToolbar()
+        self._buildStatusBar()
 
         # Add some dumy cams
         for i in range( 10 ):
@@ -401,6 +413,7 @@ class QMain( QtWidgets.QMainWindow ):
         self.cam_view.setModels( self.scene_model, self.selection_model )
         self.selection_model.selectionChanged.connect( self.cam_view.onSelectionChanged )
         self.frame_observers.append( self.cam_view )
+        self.cam_view._qgl_pane.gl_fps.connect( self.recvFps )
         self.setCentralWidget( self.cam_view )
 
         # Add dockables
@@ -433,9 +446,6 @@ class QMain( QtWidgets.QMainWindow ):
         self.cam_mon.setModels( self.scene_model, self.selection_model )
         self.addDockWidget( QtCore.Qt.RightDockWidgetArea, self.cam_mon )
 
-        # setup status bar
-        self._buildStatusBar()
-
         # Handle windowClosing and stop threads / close sockets etc
         # Quit the ArbiterListen thread
         self._app.aboutToQuit.connect( self.dets_listen.quit )
@@ -444,7 +454,7 @@ class QMain( QtWidgets.QMainWindow ):
 if __name__ == "__main__":
 
     os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
-    QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling)
+    QtWidgets.QApplication.setAttribute( QtCore.Qt.AA_EnableHighDpiScaling )
     app = QtWidgets.QApplication()
     mainWindow = QMain( app )
     sys.exit( app.exec_() )

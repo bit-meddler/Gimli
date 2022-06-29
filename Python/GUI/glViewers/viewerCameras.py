@@ -1,5 +1,5 @@
 # 
-# Copyright (C) 2016~2021 The Gimli Project
+# Copyright (C) 2016~2022 The Gimli Project
 # This file is part of Gimli <https://github.com/bit-meddler/Gimli>.
 #
 # Gimli is free software: you can redistribute it and/or modify
@@ -112,6 +112,8 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
     ToDo: With a sucessful camera calibration, we will have radial distortion data.  Use it.
     ToDo: With both above, unwarp the texture too!
     """
+    gl_fps = QtCore.Signal( float )
+
     # Camera view defaults
     ZOOM_SCALE    = 1.075
     TRUCK_SCALE   = 0.01
@@ -135,10 +137,16 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
 
         self._subwindow_sz = (0, 0)
 
+        # fps counter
+        self._frame_counter = QtCore.QElapsedTimer()
+        self._frame_counter.restart()
+        self.fps = 1
+
         self._camera_group = None # reference to all cameras
         self.cam_list = []
         self.num_cams = 0
         self.draw_lead = False
+
         # reference to Controls in the status bar
         self._lead_button  = None
         self._label_button = None
@@ -394,6 +402,9 @@ class QGLCameraPane( QtWidgets.QOpenGLWidget ):
         # for x, y, text in overlays:
         #     painter.drawText( x, y, text )
         # painter.end()
+
+        self.fps = 1000. / (float( self._frame_counter.restart() ) + 1e-6)
+        self.gl_fps.emit( self.fps )
 
     # Qt Functions -------------------------------------------------------------
     def wheelEvent( self, event ):

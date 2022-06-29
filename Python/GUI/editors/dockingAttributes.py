@@ -1,5 +1,5 @@
 # 
-# Copyright (C) 2016~2021 The Gimli Project
+# Copyright (C) 2016~2022 The Gimli Project
 # This file is part of Gimli <https://github.com/bit-meddler/Gimli>.
 #
 # Gimli is free software: you can redistribute it and/or modify
@@ -126,6 +126,7 @@ class QDockingAttrs( QtWidgets.QDockWidget ):
 
         ui_data = ui_func()
         temp = self._makePanel( ui_data, False )
+        temp.setObjectName( "X_" + ui_data.name )
         self._forms[ node_type ] = temp
         self.stack.addWidget( temp )
 
@@ -153,10 +154,12 @@ class QDockingAttrs( QtWidgets.QDockWidget ):
         """
         # make a scroll area containing the grid
         scroll = QtWidgets.QScrollArea( self )
+        scroll.setObjectName( "SA_" + ui_node.name )
         scroll.setWidgetResizable( True )
         area = QtWidgets.QWidget( scroll )
         scroll.setWidget( area )
         grid = QtWidgets.QGridLayout()
+        grid.setObjectName( "GD_" + ui_node.name )
 
         # Assemble controls
         box_list = []
@@ -174,6 +177,7 @@ class QDockingAttrs( QtWidgets.QDockWidget ):
                 continue
 
             # Add Label
+            control.setObjectName( trait.name )
             lab = QtWidgets.QLabel( trait.name )
             lab.setToolTip( key )
             grid.addWidget( lab, depth, 0 )
