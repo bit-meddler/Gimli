@@ -1,0 +1,61 @@
+{
+    "NAME": "simpleProc",
+    "ORDER": [
+        "069dcfba-4127-491f-b6bf-d66a584617c6",
+        "219defae-be37-4e01-8ca6-b10ac6857855",
+        "3cc98470-1605-48ae-afc5-8e1069ac18b3",
+        "773961e4-af5f-43b9-9ce4-0554ce9d530d",
+        "f6c1d63f-1f53-43f1-9468-79be322a5dcd"
+    ],
+    "OPERATIONS": {
+        "069dcfba-4127-491f-b6bf-d66a584617c6": {
+            "OPERATION": "Reconstruct",
+            "USERTAG": "Reconstruct",
+            "ACTIVE": true,
+            "PARAMS": {
+                "noise": "1.0",
+                "cams_track": "2"
+            }
+        },
+        "219defae-be37-4e01-8ca6-b10ac6857855": {
+            "OPERATION": "Boot",
+            "USERTAG": "Boot",
+            "ACTIVE": true,
+            "PARAMS": {
+                "doRobust": "True",
+                "presenceTrsh": "45.0"
+            }
+        },
+        "3cc98470-1605-48ae-afc5-8e1069ac18b3": {
+            "OPERATION": "Track",
+            "USERTAG": "Track",
+            "ACTIVE": true,
+            "PARAMS": {
+                "predictionClamp": "1.0",
+                "doForward": "True",
+                "doReboot": "True"
+            }
+        },
+        "773961e4-af5f-43b9-9ce4-0554ce9d530d": {
+            "OPERATION": "Track",
+            "USERTAG": "BackTrack",
+            "ACTIVE": true,
+            "PARAMS": {
+                "predictionClamp": "1.0",
+                "doForward": "False",
+                "doReboot": "True",
+                "first_frame": "-1"
+            }
+        },
+        "f6c1d63f-1f53-43f1-9468-79be322a5dcd": {
+            "OPERATION": "Solve",
+            "USERTAG": "Solve",
+            "ACTIVE": true,
+            "PARAMS": {
+                "doImplyMkrs": "True",
+                "doKineSmooth": "True",
+                "kineFactor": "1.0"
+            }
+        }
+    }
+}

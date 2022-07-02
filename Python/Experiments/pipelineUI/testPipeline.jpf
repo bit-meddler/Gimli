@@ -1,0 +1,28 @@
+{
+    "NAME": "testPipeline",
+    "ORDER": [
+        "7e3d3c60-d98a-4b9f-9a5f-9ea743e2e8a7",
+        "78faa6eb-f5ca-45bc-a828-842faad53cd8"
+    ],
+    "OPERATIONS": {
+        "7e3d3c60-d98a-4b9f-9a5f-9ea743e2e8a7": {
+            "OPERATION": "Bake",
+            "USERTAG": "Bake",
+            "ACTIVE": true,
+            "PARAMS": {
+                "scale": "69.0",
+                "doClean": "True",
+                "mapping": "Second"
+            }
+        },
+        "78faa6eb-f5ca-45bc-a828-842faad53cd8": {
+            "OPERATION": "Render",
+            "USERTAG": "Render",
+            "ACTIVE": true,
+            "PARAMS": {
+                "doRender": "True",
+                "appendage": "_export"
+            }
+        }
+    }
+}
